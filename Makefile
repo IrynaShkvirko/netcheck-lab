@@ -1,0 +1,59 @@
+BACKEND ?= local
+NETCHECK = uv run python -m netcheck --backend $(BACKEND)
+PYTEST   = uv run pytest --backend $(BACKEND) --junitxml=artifacts/junit.xml
+CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
+
+.PHONY: install install-clab render lab-up lab-down lab-reset fault-wrong-vlan \
+        fault-missing-ospf test-unit test-lab smoke demo lint typecheck check pin-images
+
+install:            ## Python deps (uv)
+	uv sync
+
+install-clab:       ## Containerlab at the pinned version
+	bash -c "$$(curl -sL https://get.containerlab.dev)" -- -v $(CLAB_VERSION)
+
+render:             ## topology + configs + expected state from intent/lab.yaml
+	$(NETCHECK) render
+
+lab-up:             ## deploy once (reused if running) and take the baseline snapshot
+	$(NETCHECK) deploy
+
+lab-down:
+	$(NETCHECK) destroy
+
+lab-reset:          ## restore the baseline snapshot (removes injected faults)
+	$(NETCHECK) restore
+
+fault-wrong-vlan:
+	$(NETCHECK) fault wrong-vlan
+
+fault-missing-ospf:
+	$(NETCHECK) fault missing-ospf-network
+
+test-unit:
+	uv run pytest tests/unit
+
+test-lab:           ## full lab suite
+	$(PYTEST) tests/lab
+
+smoke:
+	$(PYTEST) tests/lab -m smoke
+
+demo: lab-up        ## 3-5 minute interview demo
+	$(PYTEST) tests/lab -m smoke
+	$(NETCHECK) fault wrong-vlan
+	-$(PYTEST) tests/lab/test_vlan.py -k "isolated and h1-h3"
+	$(MAKE) lab-reset
+	$(PYTEST) tests/lab -m resilience
+
+lint:
+	uv run ruff check . && uv run ruff format --check .
+
+typecheck:
+	uv run mypy
+
+check: lint typecheck test-unit
+
+pin-images:         ## print image digests to paste into backends.yaml
+	@for img in $$(grep -E '^\s+(router|switch|host):' backends.yaml | awk '{print $$2}' | sort -u); do \
+		docker pull -q $$img >/dev/null && docker inspect --format='{{index .RepoDigests 0}}' $$img; done

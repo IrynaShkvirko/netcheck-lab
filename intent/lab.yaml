@@ -1,0 +1,60 @@
+# Network intent: the single source of truth (ADR-0001).
+# Ports are logical (p1, p2, ...). Backends map them to eth1 / swp1.
+#
+#   h1 --p1                         r2:p3 -- h4  (10.0.30.0/24)
+#   h2 --p2  sw1 p4 == trunk == r1 ==primary (cost 10)== r2
+#   h3 --p3                         ==backup  (cost 100)==
+#
+# VLAN 10 "users" is routed by r1. VLAN 20 "isolated" has no gateway and
+# must never share a broadcast domain with VLAN 10.
+
+name: campus-mini
+
+ospf:
+  area: 0
+  network: point-to-point
+  hello_interval: 1
+  dead_interval: 4
+
+nodes:
+  r1: {role: router, router_id: 1.1.1.1}
+  r2: {role: router, router_id: 2.2.2.2}
+  sw1: {role: switch}
+  h1: {role: host, ip: 10.0.10.11/24, gateway: 10.0.10.1}
+  h2: {role: host, ip: 10.0.10.12/24, gateway: 10.0.10.1}
+  h3: {role: host, ip: 10.0.20.13/24}
+  h4: {role: host, ip: 10.0.30.14/24, gateway: 10.0.30.1}
+
+vlans:
+  10: {name: users, gateway: {node: r1, ip: 10.0.10.1/24}}
+  20: {name: isolated}
+
+links:
+  # access ports
+  - {a: {node: h1, port: p1}, b: {node: sw1, port: p1}, mode: access, vlan: 10}
+  - {a: {node: h2, port: p1}, b: {node: sw1, port: p2}, mode: access, vlan: 10}
+  - {a: {node: h3, port: p1}, b: {node: sw1, port: p3}, mode: access, vlan: 20}
+  # trunk to the router (router-on-a-stick for VLAN 10)
+  - {a: {node: sw1, port: p4}, b: {node: r1, port: p1}, mode: trunk, vlans: [10, 20]}
+  # routed core: primary and backup
+  - a: {node: r1, port: p2, ip: 10.0.12.0/31}
+    b: {node: r2, port: p1, ip: 10.0.12.1/31}
+    ospf_cost: 10
+    label: primary
+  - a: {node: r1, port: p3, ip: 10.0.12.2/31}
+    b: {node: r2, port: p2, ip: 10.0.12.3/31}
+    ospf_cost: 100
+    label: backup
+  # server LAN behind r2 (passive OSPF)
+  - a: {node: r2, port: p3, ip: 10.0.30.1/24}
+    b: {node: h4, port: p1}
+    ospf_passive: true
+
+expect:
+  reachable:
+    - [h1, h2]
+    - [h1, h4]
+    - [h2, h4]
+  isolated:
+    - [h1, h3]
+    - [h2, h3]

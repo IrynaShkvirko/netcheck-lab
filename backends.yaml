@@ -1,0 +1,16 @@
+# Backend settings (ADR-0001). Versions are pinned here and nowhere else.
+local:
+  containerlab_version: "0.76.0"
+  port_prefix: eth          # logical p1 -> eth1
+  images:
+    router: quay.io/frrouting/frr:10.1.0
+    # Pin by digest after the first pull: `make pin-images` prints the digests.
+    switch: ghcr.io/hellt/network-multitool:latest
+    host: ghcr.io/hellt/network-multitool:latest
+
+nvidia:
+  port_prefix: swp          # logical p1 -> swp1
+  nvue_port: 8765
+  nvue_user: cumulus
+  # Credentials and the Air token come from the environment:
+  #   NVIDIA_AIR_TOKEN, NVUE_PASSWORD

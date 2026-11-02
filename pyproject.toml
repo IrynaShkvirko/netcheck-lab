@@ -1,0 +1,56 @@
+[project]
+name = "netcheck"
+version = "0.1.0"
+description = "Intent-driven network test framework: Containerlab/FRR and NVIDIA Cumulus backends"
+requires-python = ">=3.11"
+dependencies = [
+    "pytest>=8.2",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.10",
+    "ruff>=0.5",
+    "types-PyYAML",
+    "types-requests",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["netcheck"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]          # `pytest` alone never touches a lab
+addopts = "-ra"
+markers = [
+    "smoke: lab is up and links are operational",
+    "functional: VLAN, reachability and OSPF behaviour",
+    "resilience: failures and convergence",
+    "drift: live state vs intent",
+]
+junit_family = "xunit1"              # keeps <properties> for measurements
+junit_logging = "system-out"         # device command log
+junit_log_passing_tests = false      # ...for failed tests only (ADR-0005)
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "PT"]
+ignore = ["B023"]   # loop-variable defaults in lambdas are intentional
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PT018"]  # compound asserts read better for state checks
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["netcheck"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true
