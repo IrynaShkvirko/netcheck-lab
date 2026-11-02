@@ -2,7 +2,12 @@
 
 import pytest
 
-from netcheck.assertions import assert_isolated, assert_route_present, interface_blocks
+from netcheck.assertions import (
+    assert_isolated,
+    assert_ospf_neighbor_full,
+    assert_route_present,
+    interface_blocks,
+)
 from netcheck.capabilities import OspfNeighbor, PortVlans, Route
 from netcheck.report import FailureReport, IntentViolation
 
@@ -87,3 +92,17 @@ def test_interface_blocks_parse_frr_config() -> None:
         "router ospf\n ospf router-id 1.1.1.1\n"
     )
     assert interface_blocks(cfg) == {"eth2": ["ip ospf area 0", "ip ospf cost 10"]}
+
+
+def test_adjacency_is_checked_per_link(fake) -> None:  # type: ignore[no-untyped-def]
+    """Backup adjacency down, primary Full: only the backup case may fail."""
+    lab, parts = fake
+    parts["ospf_r1"].nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2")]  # p3 (backup) is gone
+    assert_ospf_neighbor_full(lab["r1"], lab["r2"], port="p2")
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_neighbor_full(lab["r1"], lab["r2"], port="p3")
+    report = exc.value.report
+    assert report.verdict == "r1 must have a Full OSPF adjacency with r2 (2.2.2.2) via r1:p3"
+    assert report.actual == "state absent"
+    assert "only p3 is down" in report.evidence["diagnosis"][0]
+    assert list(k for k in report.evidence if "link" in k) == ["r1:p3 link (backup)"]

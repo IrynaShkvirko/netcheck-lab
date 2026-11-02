@@ -226,6 +226,7 @@ def expected_state(intent: Intent) -> dict[str, Any]:
                         "neighbor": peer.node,
                         "router_id": intent.nodes[peer.node].router_id or "",
                         "local_port": me.port,
+                        "link": lk.label or f"{me.port}-{peer.port}",
                         "state": "Full",
                     }
                 )

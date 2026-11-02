@@ -11,10 +11,10 @@ pytestmark = pytest.mark.functional
 
 
 def test_ospf_adjacency_is_full(
-    ospf_adjacency: tuple[str, str], node: Callable[[str], Device]
+    ospf_adjacency: tuple[str, str, str, str], node: Callable[[str], Device]
 ) -> None:
-    r1, r2 = ospf_adjacency
-    assert_ospf_neighbor_full(node(r1), node(r2))
+    router, neighbor, port, _link = ospf_adjacency
+    assert_ospf_neighbor_full(node(router), node(neighbor), port=port)
 
 
 def test_ospf_route_is_learned(ospf_route: tuple[str, str], node: Callable[[str], Device]) -> None:

@@ -19,6 +19,10 @@ def test_expected_state_from_intent(intent):  # type: ignore[no-untyped-def]
     assert exp["routes"] == {"r1": ["10.0.30.0/24"], "r2": ["10.0.10.0/24"]}
     assert {n["neighbor"] for n in exp["ospf_neighbors"]["r1"]} == {"r2"}
     assert len(exp["ospf_neighbors"]["r1"]) == 2  # primary + backup
+    assert [(n["local_port"], n["link"]) for n in exp["ospf_neighbors"]["r1"]] == [
+        ("p2", "primary"),
+        ("p3", "backup"),
+    ]
     assert exp["vlan_membership"]["sw1"]["p3"] == {"mode": "access", "vlans": [20]}
     assert exp["vlan_membership"]["sw1"]["p4"] == {"mode": "trunk", "vlans": [10, 20]}
 

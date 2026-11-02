@@ -21,9 +21,15 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         pairs = expected["reachable"]
         metafunc.parametrize("reachable_pair", pairs, ids=[f"{a}-{b}" for a, b in pairs])
     if "ospf_adjacency" in metafunc.fixturenames:
-        adj = [(r, n["neighbor"]) for r, ns in expected["ospf_neighbors"].items() for n in ns]
-        unique = sorted(set(adj))
-        metafunc.parametrize("ospf_adjacency", unique, ids=[f"{a}-{b}" for a, b in unique])
+        # one case per adjacency: two links between the same routers are two cases
+        adj = [
+            (r, n["neighbor"], n["local_port"], n["link"])
+            for r, ns in expected["ospf_neighbors"].items()
+            for n in ns
+        ]
+        metafunc.parametrize(
+            "ospf_adjacency", adj, ids=[f"{r}-{nb}-{link}" for r, nb, _, link in adj]
+        )
     if "ospf_route" in metafunc.fixturenames:
         routes = [(r, p) for r, ps in expected["routes"].items() for p in ps]
         metafunc.parametrize("ospf_route", routes, ids=[f"{r}-{p}" for r, p in routes])

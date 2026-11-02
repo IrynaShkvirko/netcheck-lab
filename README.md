@@ -106,7 +106,7 @@ Lab commands:
 
 ```bash
 make smoke            # lab is usable (2 tests, seconds)
-make test-lab         # full suite (14 tests)
+make test-lab         # full suite (16 tests)
 make demo             # interview flow, see below
 ```
 

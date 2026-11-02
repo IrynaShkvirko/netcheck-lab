@@ -201,22 +201,27 @@ def assert_isolated(a: Device, b: Device) -> PingResult:
 # ---- OSPF --------------------------------------------------------------
 
 
-def assert_ospf_neighbor_full(r1: Device, r2: Device) -> float:
-    """r1 sees r2 in state Full. Returns seconds waited (recorded against the SLA)."""
+def assert_ospf_neighbor_full(r1: Device, r2: Device, port: str | None = None) -> float:
+    """r1 sees r2 in state Full on its local `port`. Returns seconds waited.
+
+    With two links between the same routers there are two adjacencies; `port` picks
+    one. Matching on the router ID alone would pass while one of them is down.
+    """
     lab = current()
     rid = lab.intent.nodes[r2.name].router_id or ""
 
     def state() -> str:
         for n in r1.ospf.neighbors():
-            if n.router_id == rid:
+            if n.router_id == rid and (port is None or n.port == port):
                 return n.state
         return "absent"
 
     try:
         _, elapsed = lab.timing.wait_until("ospf_neighbor_full", state, lambda s: s == "Full")
     except WaitTimeout as exc:
+        via = f" via {r1.name}:{port}" if port else ""
         report = FailureReport(
-            verdict=f"{r1.name} must have a Full OSPF adjacency with {r2.name} ({rid})",
+            verdict=f"{r1.name} must have a Full OSPF adjacency with {r2.name} ({rid}){via}",
             expected="state Full",
             actual=f"state {exc.last}",
         )
@@ -225,11 +230,20 @@ def assert_ospf_neighbor_full(r1: Device, r2: Device) -> float:
                 f"{r.name} neighbors",
                 [f"{n.router_id} {n.state} via {n.port}" for n in r.ospf.neighbors()] or ["(none)"],
             )
+        others = [n.port for n in r1.ospf.neighbors() if n.router_id == rid and n.state == "Full"]
+        if port and others:
+            report.add_evidence(
+                "diagnosis",
+                [f"{r1.name} is Full with {r2.name} via {', '.join(others)}; only {port} is down"],
+            )
         for lk in lab.intent.links:
-            if {lk.a.node, lk.b.node} == {r1.name, r2.name}:
-                ep = lk.endpoint(r1.name)
+            if {lk.a.node, lk.b.node} != {r1.name, r2.name}:
+                continue
+            ep = lk.endpoint(r1.name)
+            if port is None or ep.port == port:
+                label = f" ({lk.label})" if lk.label else ""
                 report.add_evidence(
-                    f"{r1.name}:{ep.port} link", [str(r1.links.link_state(ep.port))]
+                    f"{r1.name}:{ep.port} link{label}", [str(r1.links.link_state(ep.port))]
                 )
         _fail(report)
         raise
