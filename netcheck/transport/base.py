@@ -19,6 +19,7 @@ class CommandResult:
     stdout: str
     stderr: str
     rc: int
+    target: str = ""  # device or container the command ran on
 
     @property
     def ok(self) -> bool:
@@ -28,12 +29,18 @@ class CommandResult:
         try:
             return json.loads(self.stdout or "null")
         except json.JSONDecodeError as exc:
-            raise TransportError(f"expected JSON from {self.cmd!r}: {exc}") from exc
+            raise TransportError(f"{self._where}expected JSON from {self.cmd!r}: {exc}") from exc
 
     def check(self) -> CommandResult:
         if not self.ok:
-            raise TransportError(f"{self.cmd!r} failed rc={self.rc}: {self.stderr.strip()}")
+            raise TransportError(
+                f"{self._where}{self.cmd!r} failed rc={self.rc}: {self.stderr.strip()}"
+            )
         return self
+
+    @property
+    def _where(self) -> str:
+        return f"{self.target}: " if self.target else ""
 
 
 @dataclass

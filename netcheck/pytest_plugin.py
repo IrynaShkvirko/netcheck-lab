@@ -79,9 +79,10 @@ def _isolate(request: pytest.FixtureRequest) -> Generator[None, None, None]:
         return
     the_lab: Lab = request.getfixturevalue("lab")
     the_lab.test_artifacts = the_lab.artifacts_dir / _safe(request.node.nodeid)
-    the_lab.log_marks = {n: d.log.mark() for n, d in the_lab.devices.items()}
     request.node.stash[STATE_KEY] = {"measure_mark": len(the_lab.timing.measurements)}
     the_lab.snapshot_id = the_lab.backend.snapshot(_safe(request.node.name)[:40])
+    # mark logs after the snapshot, so reports show only the test's own calls
+    the_lab.log_marks = {n: d.log.mark() for n, d in the_lab.devices.items()}
     request.node.stash[STATE_KEY]["snapshot_id"] = the_lab.snapshot_id
     yield
     errors = the_lab.cleanup.run()  # layer 2: LIFO undo
@@ -164,3 +165,33 @@ def pytest_runtest_makereport(
         # "Captured stdout" sections go to JUnit <system-out> (failed tests only, see pyproject)
         rep.sections.append(("Captured stdout netcheck device log", log_text + "\n"))
     return rep
+
+
+_measured: list[tuple[str, str, float, bool]] = []
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Collect measurements for the end-of-run summary."""
+    if report.when != "call":
+        return
+    keys = {k for k, _ in report.user_properties}
+    for key, value in report.user_properties:
+        if key.startswith("measured."):
+            check = key[len("measured.") : -len("_s")]
+            breached = f"sla_breach.{check}" in keys
+            _measured.append((report.nodeid, check, float(str(value)), breached))
+
+
+def pytest_terminal_summary(terminalreporter: Any) -> None:
+    """Print measured timing values so a passing run still shows the numbers."""
+    if not _measured:
+        return
+    lab = terminalreporter.config.stash.get(LAB_KEY, None)
+    terminalreporter.section("netcheck measurements")
+    for nodeid, check, value, breached in _measured:
+        th = lab.timing.thresholds.get(check) if lab is not None else None
+        sla_s = f" (SLA {th.sla:g}s)" if th is not None and th.sla is not None else ""
+        flag = "  SLA BREACH" if breached else ""
+        name = nodeid.split("::")[-1]
+        terminalreporter.write_line(f"{name}: {check} = {value:.3f}s{sla_s}{flag}")

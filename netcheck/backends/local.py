@@ -31,6 +31,11 @@ from netcheck.render import port_name, render
 from netcheck.transport.base import CommandResult, TransportError
 from netcheck.transport.docker_exec import DockerExecTransport
 
+
+class LabDegraded(RuntimeError):
+    """The lab containers run but their links are missing; redeploy needed."""
+
+
 _PING = re.compile(r"(\d+) packets transmitted, (\d+) (?:packets )?received")
 
 
@@ -87,6 +92,55 @@ def parse_bridge_vlans(
         )
         out[to_logical[ifname]] = PortVlans("access" if access else "trunk", vids)
     return dict(sorted(out.items()))
+
+
+# ---- FRR config diff (used by snapshot restore) -----------------------------
+
+_FRR_SKIP = ("Building configuration", "Current configuration", "frr version", "end")
+
+
+def frr_sections(config: str) -> dict[str, list[str]]:
+    """Split FRR running-config into {section header: [lines]}; "" holds global lines."""
+    sections: dict[str, list[str]] = {"": []}
+    current: str | None = None
+    for raw in config.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped == "!" or stripped.startswith(_FRR_SKIP):
+            if stripped == "!":
+                current = None
+            continue
+        if stripped == "exit":
+            current = None
+        elif line.startswith(" ") and current is not None:
+            sections[current].append(stripped)
+        elif stripped.startswith(("interface ", "router ", "line ")):
+            current = stripped
+            sections.setdefault(current, [])
+        else:
+            current = None
+            sections[""].append(stripped)
+    return sections
+
+
+def frr_config_diff(wanted: str, live: str) -> list[list[str]]:
+    """vtysh command sequences (run under 'conf t') that turn `live` into `wanted`."""
+    want, have = frr_sections(wanted), frr_sections(live)
+    steps: list[list[str]] = []
+    for section in sorted(set(want) | set(have)):
+        w, h = want.get(section), have.get(section)
+        if w is None:
+            if section and not section.startswith("line "):
+                steps.append([f"no {section}"])
+            continue
+        prefix = [section] if section else []
+        extra = [f"no {ln}" for ln in (h or []) if ln not in w]
+        missing = [ln for ln in w if ln not in (h or [])]
+        if h is None or extra or missing:
+            body = extra + missing
+            if body or h is None:
+                steps.append(prefix + body)
+    return [s for s in steps if s]
 
 
 # ---- capabilities --------------------------------------------------------
@@ -202,7 +256,7 @@ class LinuxShell(_Base, Shell):
         handle.stopped = True
         self.run(f"kill -INT {handle.pid} 2>/dev/null; sleep 0.3")
         handle.summary = self.run(
-            f"tcpdump -nn -r {handle.remote_path} -c 20 2>/dev/null"
+            f"tcpdump -nn -r {handle.remote_path} -c 200 2>/dev/null"
         ).stdout.splitlines()
         dest = Path(dest_dir) / f"{handle.device}-{handle.port}.pcap"
         try:
@@ -257,10 +311,31 @@ class LocalBackend(Backend):
         ).stdout.split()
         return len(out) == len(self.intent.nodes)
 
+    def missing_ports(self) -> list[str]:
+        """Intended ports that do not exist in their container.
+
+        Containerlab wires links once at deploy; a restarted container comes back
+        without them. Returns e.g. ["r1:p1 (eth1)"]; empty means the lab is intact.
+        """
+        missing = []
+        for name, dev in self.devices().items():
+            links = dev.links
+            assert isinstance(links, LinuxLinks)
+            res = links.run("ip -br link show")
+            present = {ln.split()[0].split("@")[0] for ln in res.stdout.splitlines() if ln.strip()}
+            missing += [
+                f"{name}:{lp} ({real})" for lp, real in dev.port_map.items() if real not in present
+            ]
+        return missing
+
     def deploy(self, fresh: bool = False) -> bool:
         render(self.intent, self.settings["images"], self.build_dir, self.prefix)
         if self.is_running() and not fresh:
-            return False
+            missing = self.missing_ports()
+            if not missing:
+                return False
+            print(f"lab is running but degraded (missing {', '.join(missing)}); redeploying")
+            self._devices = None
         subprocess.run(
             [*self.clab, "deploy", "-t", str(self.topology_file), "--reconfigure"], check=True
         )
@@ -322,6 +397,12 @@ class LocalBackend(Backend):
         return snap_id
 
     def restore(self, snapshot_id: str) -> None:
+        missing = self.missing_ports()
+        if missing:
+            raise LabDegraded(
+                f"cannot restore {snapshot_id}: lab links are gone ({', '.join(missing)}). "
+                "A container was probably restarted. Run `make lab-fresh`."
+            )
         data = json.loads((self.snapshot_dir / f"{snapshot_id}.json").read_text())
         devs = self.devices()
         for name, ports in data["links"].items():
@@ -336,14 +417,31 @@ class LocalBackend(Backend):
                     continue
                 self._restore_port(devs[name], port, mode, vlans)
         for name, config in data["frr"].items():
-            t = devs[name].ospf  # FrrOspf
-            assert isinstance(t, FrrOspf)
-            t.run("cat > /tmp/netcheck-restore.conf", stdin=config).check()
-            res = t.run(
-                "/usr/lib/frr/frr-reload.py --reload /tmp/netcheck-restore.conf", timeout=60
-            )
+            ospf = devs[name].ospf
+            assert isinstance(ospf, FrrOspf)
+            self._restore_frr(name, ospf, config)
+
+    @staticmethod
+    def _restore_frr(name: str, ospf: FrrOspf, wanted: str) -> None:
+        """Bring FRR back to `wanted` by applying only the differing lines.
+
+        Does not depend on frr-reload.py (not usable in the FRR container image).
+        Skips entirely when nothing changed, and verifies the result afterwards.
+        """
+        steps = frr_config_diff(wanted, ospf.running_config())
+        if not steps:
+            return
+        for step in steps:
+            args = " ".join(f"-c {shlex.quote(c)}" for c in ["conf t", *step])
+            res = ospf.run(f"vtysh {args}")
             if not res.ok:
-                raise TransportError(f"{name}: frr-reload failed: {res.stderr.strip()[-300:]}")
+                raise TransportError(
+                    f"{name}: restore step {step} failed: "
+                    f"{(res.stdout + res.stderr).strip()[-300:]}"
+                )
+        remaining = frr_config_diff(wanted, ospf.running_config())
+        if remaining:
+            raise TransportError(f"{name}: config still differs after restore: {remaining}")
 
     @staticmethod
     def _restore_port(dev: Device, port: str, mode: str, vlans: list[int]) -> None:

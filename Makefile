@@ -3,7 +3,7 @@ NETCHECK = uv run python -m netcheck --backend $(BACKEND)
 PYTEST   = uv run pytest --backend $(BACKEND) --junitxml=artifacts/junit.xml
 CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
 
-.PHONY: install install-clab render lab-up lab-down lab-reset fault-wrong-vlan \
+.PHONY: install install-clab render lab-up lab-fresh lab-down lab-reset fault-wrong-vlan \
         fault-missing-ospf test-unit test-lab smoke demo lint typecheck check pin-images
 
 install:            ## Python deps (uv)
@@ -17,6 +17,9 @@ render:             ## topology + configs + expected state from intent/lab.yaml
 
 lab-up:             ## deploy once (reused if running) and take the baseline snapshot
 	$(NETCHECK) deploy
+
+lab-fresh:          ## destroy and redeploy (use if a container restarted and lost its links)
+	$(NETCHECK) deploy --fresh
 
 lab-down:
 	$(NETCHECK) destroy

@@ -8,7 +8,8 @@ from pathlib import Path
 
 import yaml
 
-from netcheck.backends import get_backend
+from netcheck.backends import Backend, get_backend
+from netcheck.backends.local import LabDegraded
 from netcheck.faults import FAULTS
 from netcheck.intent import load_intent
 from netcheck.render import render
@@ -41,6 +42,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     backend = get_backend(args.backend, intent, ROOT)
+    try:
+        return _run(args, backend)
+    except LabDegraded as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def _run(args: argparse.Namespace, backend: Backend) -> int:
     if args.cmd == "deploy":
         deployed = backend.deploy(fresh=args.fresh)
         snap = backend.snapshot("baseline")

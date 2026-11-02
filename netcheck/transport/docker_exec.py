@@ -24,7 +24,13 @@ class DockerExecTransport:
         except subprocess.TimeoutExpired as exc:
             self.log.record("exec", cmd, "TIMEOUT", None, started)
             raise TransportError(f"{self.container}: {cmd!r} timed out after {timeout}s") from exc
-        result = CommandResult(cmd=cmd, stdout=proc.stdout, stderr=proc.stderr, rc=proc.returncode)
+        result = CommandResult(
+            cmd=cmd,
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+            rc=proc.returncode,
+            target=self.container,
+        )
         self.log.record(
             "exec",
             cmd,

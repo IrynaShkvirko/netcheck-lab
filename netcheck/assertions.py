@@ -10,7 +10,7 @@ explains why before raising IntentViolation. Tests read like requirements:
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from netcheck.capabilities import CaptureHandle, PingResult, Route
@@ -91,7 +91,11 @@ def _finish_capture(
         return
     try:
         done = device.shell.stop_capture(handle, str(_capture_dir(lab)))
-        report.capture_summary += [f"{device.name}:{handle.port}"] + done.summary
+        shown = done.summary[:CAPTURE_LINES]
+        more = len(done.summary) - len(shown)
+        report.capture_summary += [f"{device.name}:{handle.port}", *shown]
+        if more > 0:
+            report.capture_summary.append(f"... {more} more packets in the pcap")
         if done.local_path:
             report.capture_files.append(done.local_path)
     except Exception as exc:  # noqa: BLE001
@@ -100,6 +104,15 @@ def _finish_capture(
 
 def _undo_route(host: Device, prefix: str) -> Callable[[], None]:
     return lambda: host.shell.del_host_route(prefix)
+
+
+CAPTURE_LINES = 6  # packets shown in the report; the full capture is in the pcap
+
+
+def _neigh_line(n: Mapping[str, object]) -> str:
+    state = n.get("state")
+    state_s = ",".join(map(str, state)) if isinstance(state, list) else str(state)
+    return f"{n.get('dst')} lladdr {n.get('lladdr')} {state_s}"
 
 
 def _fail(report: FailureReport) -> None:
@@ -178,7 +191,7 @@ def assert_isolated(a: Device, b: Device) -> PingResult:
         report.add_evidence(f"{sw} VLAN membership", evidence)
     report.add_evidence(
         f"{a.name} neighbor table",
-        [f"{n.get('dst')} lladdr {n.get('lladdr')} {n.get('state')}" for n in a.shell.neighbors()],
+        [_neigh_line(n) for n in a.shell.neighbors()],
     )
     _finish_capture(lab, b, capture, report)
     _fail(report)

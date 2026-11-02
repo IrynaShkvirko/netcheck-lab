@@ -24,7 +24,7 @@ Option 3.
   snapshot is taken right after deploy.
 - **Layer 1, snapshot and rollback per test:** before each test the backend takes a
   snapshot of device configuration and link state; after the test it restores it.
-  - Local: FRR running config (restored with `frr-reload.py`), bridge VLAN
+  - Local: FRR running config (restored by a section diff applied with `vtysh`), bridge VLAN
     membership, link admin state, stored as JSON in `.netcheck/snapshots/`.
   - NVIDIA: NVUE configuration revisions.
 - **Layer 2, cleanup registry:** every test-created resource registers its undo
@@ -36,6 +36,14 @@ Option 3.
 JSON document of FRR config text, VLAN membership and link state, with an ID. The ID
 is printed in every failure report so the exact state can be restored
 (`python -m netcheck restore <id>`).
+
+### Revision (2026-11-02, first lab run)
+
+The first design restored FRR with `frr-reload.py`. On the first real run it failed in
+every test: the script is not usable inside the FRR container image and reported
+nothing on stderr. Replaced with `frr_config_diff`: compare snapshot and live config per
+section, apply only the missing lines (and `no <line>` for extra ones) through `vtysh`,
+then re-read and verify. No restore runs when nothing changed, which is the common case.
 
 ## Consequences
 

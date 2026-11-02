@@ -47,6 +47,9 @@ make lab-down
 
 Without a lab: `make check` runs ruff, mypy and the unit tests (fake devices).
 
+If a container restarts (Docker restart, VM sleep), it comes back without its lab links.
+`make lab-up` detects this and redeploys; `make lab-fresh` forces a clean redeploy.
+
 ## Demo (3-5 minutes)
 
 ```bash
