@@ -182,8 +182,13 @@ def assert_isolated(a: Device, b: Device) -> PingResult:
 def check_vlan_membership(
     switch: str, expected: Mapping[str, Mapping[str, Any]], live: Mapping[str, PortVlans]
 ) -> None:
-    """Every port in `expected` has exactly the intended mode and VLANs."""
-    bad = [d for d in vlan_diff(switch, expected, live, sorted(expected)) if d.expected != d.actual]
+    """Live membership equals the intent: every intended port matches, and no live port is extra."""
+    ports = sorted(set(expected) | set(live))
+    bad = [d for d in vlan_diff(switch, expected, live, ports) if d.expected != d.actual]
+    for line in bad:
+        port = line.where.removeprefix(f"{switch}:")
+        if port not in expected:
+            line.note = "not in the intent"
     if bad:
         report = FailureReport(
             verdict=f"{switch} VLAN membership must match the intent",

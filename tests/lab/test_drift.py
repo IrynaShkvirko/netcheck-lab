@@ -10,7 +10,7 @@ pytestmark = pytest.mark.drift
 
 
 def test_vlan_membership_matches_intent(lab: Lab, switch_name: str) -> None:
-    """Every switch port carries exactly the VLANs the intent gives it."""
+    """Every switch port carries exactly the VLANs the intent gives it: none missing, none extra."""
     switch = lab[switch_name]
 
     with step(f"Read from the intent which VLANs each {switch_name} port must carry"):
@@ -20,7 +20,8 @@ def test_vlan_membership_matches_intent(lab: Lab, switch_name: str) -> None:
     with step(f"Read the live VLAN membership from {switch_name}"):
         live = switch.bridge.vlan_membership()
 
-    with step(f"Compare each of the {len(expected)} ports: mode and VLANs"):
+    compared = len(set(expected) | set(live))
+    with step(f"Compare each of the {compared} ports: mode and VLANs, none missing and none extra"):
         check_vlan_membership(switch_name, expected, live)
 
 
