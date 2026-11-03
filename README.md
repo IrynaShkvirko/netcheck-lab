@@ -226,6 +226,9 @@ The NVIDIA backend (`--backend nvidia`) is not runnable yet; it needs `NVIDIA_AI
 
 ## How it is built
 
+For an interactive walk-through, open [`docs/backend-map.html`](docs/backend-map.html) in a browser:
+click a device to see its ports and capabilities, or step through a test layer by layer.
+
 ```
 intent/lab.yaml ──render──> build/<lab>/  topology.clab.yml, configs/, expected_state.json
                                                │
@@ -252,7 +255,7 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
 
 ## Design decisions
 
-See [`docs/decisions/`](docs/decisions/README.md):
+See [`docs/decisions/`](docs/decisions/README.md) (and [`docs/backend-map.html`](docs/backend-map.html) for the interactive map):
 
 1. [Two backends, one intent](docs/decisions/0001-backends-and-intent.md)
 2. [Composition: transports and capabilities](docs/decisions/0002-device-composition-and-transports.md)
