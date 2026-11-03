@@ -4,7 +4,8 @@ PYTEST   = uv run pytest --backend $(BACKEND) --junitxml=artifacts/junit.xml
 CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
 
 .PHONY: install install-clab render lab-up lab-fresh lab-down lab-reset fault-wrong-vlan \
-        fault-missing-ospf test-unit test-lab smoke demo lint typecheck check pin-images
+        fault-missing-ospf test-unit test-lab test-lab-live smoke demo \
+        lint typecheck check pin-images
 
 install:            ## Python deps (uv)
 	uv sync
@@ -38,6 +39,9 @@ test-unit:
 
 test-lab:           ## full lab suite
 	$(PYTEST) tests/lab
+
+test-lab-live:      ## full suite, printing each test step as it runs
+	$(PYTEST) tests/lab -v -o log_cli=true --log-cli-level=INFO --log-cli-format='  %(message)s'
 
 smoke:
 	$(PYTEST) tests/lab -m smoke

@@ -51,3 +51,18 @@ protocols: `CommandTransport.run(cmd)` and `ApiTransport.request(method, path, b
 - New NOS = new capability implementations; tests and assertions are unchanged.
 - Every transport call is recorded in a per-device log with request, raw response,
   return code and duration. Reports read from this log (ADR-0005).
+
+## Revision (2026-11-03, code review)
+
+The review found that assertions parsed FRR `running-config` text to explain OSPF failures,
+which broke the rule above and would have made every diagnosis empty on the NVIDIA backend.
+
+- New normalized capability methods: `Ospf.interface_settings()` returns `OspfInterface`
+  (area, hello/dead interval, passive, cost, addresses) per logical interface (`p2`, or
+  `p1.10` for a VLAN sub-interface), and `Ospf.set_interface_area()`.
+- `running_config()` is no longer part of the `Ospf` interface; it stays inside the local
+  backend for snapshots. FRR text is parsed in one place (`parse_frr_interfaces`).
+- Faults go through capabilities too (the missing-OSPF fault uses `set_interface_area`).
+- `Links.link_states(ports)` reads every port of a device in one call.
+- A unit test fails if NOS syntax (`vtysh`, `running_config`, `ip ospf area`) appears in
+  `netcheck/assertions/`.

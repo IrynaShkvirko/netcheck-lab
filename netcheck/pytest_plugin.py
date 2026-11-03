@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
-import warnings
+import shutil
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -15,13 +16,18 @@ from netcheck.cleanup import CleanupError
 from netcheck.device import CapabilityMissing
 from netcheck.intent import expected_state, load_intent
 from netcheck.lab import Lab, set_current
+from netcheck.labstate import LabState
 from netcheck.report import IntentViolation
-from netcheck.timing import Timing
+from netcheck.timing import Measurement, Timing
 
 ROOT = Path(__file__).resolve().parent.parent
 
 LAB_KEY = pytest.StashKey[Lab]()
 STATE_KEY = pytest.StashKey[dict[str, Any]]()
+MEASURED_KEY = pytest.StashKey[list[tuple[str, Measurement]]]()
+
+# Exit code when the lab can no longer be trusted (restore failed); later results would mislead.
+EXIT_LAB_UNTRUSTED = 3
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -42,6 +48,28 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     g.addoption("--artifacts", default=str(ROOT / "artifacts"))
 
 
+def pytest_report_header(config: pytest.Config) -> list[str]:
+    """Show injected faults at the top of every run, so nobody misreads their results."""
+    faults = LabState(ROOT).active_faults()
+    if not faults:
+        return []
+    return [
+        "netcheck: FAULTS ARE APPLIED to the lab (expected failures; `make lab-reset` clears):"
+    ] + [f"  {f}" for f in faults]
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Refuse parallel workers for lab tests: they would drive the same containers,
+    so faults, snapshots and restores of one worker would hit the others."""
+    if not os.environ.get("PYTEST_XDIST_WORKER"):
+        return
+    if any("lab" in getattr(item, "fixturenames", ()) for item in items):
+        pytest.exit(
+            "netcheck lab tests share one lab and must run serially: drop `-n` (pytest-xdist)",
+            returncode=pytest.ExitCode.USAGE_ERROR,
+        )
+
+
 def _safe(nodeid: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", nodeid).strip("_")[-120:]
 
@@ -51,7 +79,7 @@ def lab(request: pytest.FixtureRequest) -> Generator[Lab, None, None]:
     cfg = request.config
     intent = load_intent(cfg.getoption("--intent"))
     backend = get_backend(cfg.getoption("--backend"), intent, ROOT)
-    deployed = backend.deploy(fresh=cfg.getoption("--fresh-lab"))
+    deployed, _ = backend.up(fresh=cfg.getoption("--fresh-lab"))
     if cfg.getoption("--snapshot"):
         backend.restore(cfg.getoption("--snapshot"))
     timing = Timing.load(ROOT / "timing.yaml", backend.timing_profile, intent.timer_vars())
@@ -78,24 +106,39 @@ def _isolate(request: pytest.FixtureRequest) -> Generator[None, None, None]:
         yield
         return
     the_lab: Lab = request.getfixturevalue("lab")
+    # the report hook finds the lab here, whichever fixture created it
+    request.config.stash[LAB_KEY] = the_lab
     the_lab.test_artifacts = the_lab.artifacts_dir / _safe(request.node.nodeid)
+    # files from an earlier run of this test must not sit next to this run's evidence
+    shutil.rmtree(the_lab.test_artifacts, ignore_errors=True)
     request.node.stash[STATE_KEY] = {"measure_mark": len(the_lab.timing.measurements)}
     the_lab.snapshot_id = the_lab.backend.snapshot(_safe(request.node.name)[:40])
     # mark logs after the snapshot, so reports show only the test's own calls
     the_lab.log_marks = {n: d.log.mark() for n, d in the_lab.devices.items()}
+    the_lab.steps = []
     request.node.stash[STATE_KEY]["snapshot_id"] = the_lab.snapshot_id
     yield
     errors = the_lab.cleanup.run()  # layer 2: LIFO undo
+    restore_failed = False
     try:
         the_lab.backend.restore(the_lab.snapshot_id)  # layer 1: config/link rollback
     except Exception as exc:  # noqa: BLE001
+        restore_failed = True
         errors.append(CleanupError("snapshot restore", f"{type(exc).__name__}: {exc}"))
-    if errors:
-        the_lab.test_artifacts.mkdir(parents=True, exist_ok=True)
-        (the_lab.test_artifacts / "cleanup-errors.txt").write_text(
-            "\n".join(f"{e.description}: {e.error}" for e in errors)
+    if not errors:
+        return
+    the_lab.test_artifacts.mkdir(parents=True, exist_ok=True)
+    listing = "\n".join(f"{e.description}: {e.error}" for e in errors)
+    (the_lab.test_artifacts / "cleanup-errors.txt").write_text(listing + "\n")
+    if restore_failed:
+        # the lab is in an unknown state: every later result would be blamed on the wrong test
+        pytest.exit(
+            f"lab restore failed after {request.node.nodeid}; stopping so later tests do not run "
+            f"on a broken lab. Run `make lab-reset` (or `make lab-fresh`).\n{listing}",
+            returncode=EXIT_LAB_UNTRUSTED,
         )
-        warnings.warn(f"cleanup errors in {request.node.nodeid}: {len(errors)}", stacklevel=1)
+    # rollback worked, but some undo step failed: show it as an error, not a passing test
+    pytest.fail(f"cleanup failed after the test (lab was restored):\n{listing}", pytrace=False)
 
 
 @pytest.hookimpl(wrapper=True)
@@ -118,7 +161,9 @@ def pytest_runtest_makereport(
 
     # measurements and context as JUnit <properties>, for passing tests too
     measured = the_lab.timing.measurements[state["measure_mark"] :]
+    summary = item.config.stash.setdefault(MEASURED_KEY, [])
     for m in measured:
+        summary.append((item.nodeid, m))
         item.user_properties.append((f"measured.{m.check}_s", m.value_s))
         if m.breached:
             item.user_properties.append((f"sla_breach.{m.check}", m.sla_s))
@@ -132,11 +177,13 @@ def pytest_runtest_makereport(
     artifacts = the_lab.test_artifacts
     marks = the_lab.log_marks
     for name, dev in the_lab.devices.items():
-        if len(dev.log.entries) > marks.get(name, 0):
+        if dev.log.mark() > marks.get(name, 0):
             dev.log.write_jsonl(artifacts / "logs" / f"{name}.jsonl", marks.get(name, 0))
 
+    steps = [s.line() for s in the_lab.steps]
     if isinstance(call.excinfo.value, IntentViolation):
         report = call.excinfo.value.report
+        report.steps = steps
         try:
             report.environment = the_lab.backend.environment()
         except Exception as exc:  # noqa: BLE001
@@ -156,6 +203,10 @@ def pytest_runtest_makereport(
         report.write(artifacts)
         rep.longrepr = report.render()
 
+    elif steps:
+        # plain assertion or error: still say which step it was in
+        rep.sections.append(("Captured stdout netcheck steps", "\n".join(steps) + "\n"))
+
     log_text = "\n".join(
         ln
         for name, dev in the_lab.devices.items()
@@ -167,31 +218,15 @@ def pytest_runtest_makereport(
     return rep
 
 
-_measured: list[tuple[str, str, float, bool]] = []
-
-
-@pytest.hookimpl(trylast=True)
-def pytest_runtest_logreport(report: pytest.TestReport) -> None:
-    """Collect measurements for the end-of-run summary."""
-    if report.when != "call":
-        return
-    keys = {k for k, _ in report.user_properties}
-    for key, value in report.user_properties:
-        if key.startswith("measured."):
-            check = key[len("measured.") : -len("_s")]
-            breached = f"sla_breach.{check}" in keys
-            _measured.append((report.nodeid, check, float(str(value)), breached))
-
-
 def pytest_terminal_summary(terminalreporter: Any) -> None:
     """Print measured timing values so a passing run still shows the numbers."""
-    if not _measured:
+    measured = terminalreporter.config.stash.get(MEASURED_KEY, [])
+    if not measured:
         return
-    lab = terminalreporter.config.stash.get(LAB_KEY, None)
     terminalreporter.section("netcheck measurements")
-    for nodeid, check, value, breached in _measured:
-        th = lab.timing.thresholds.get(check) if lab is not None else None
-        sla_s = f" (SLA {th.sla:g}s)" if th is not None and th.sla is not None else ""
-        flag = "  SLA BREACH" if breached else ""
-        name = nodeid.split("::")[-1]
-        terminalreporter.write_line(f"{name}: {check} = {value:.3f}s{sla_s}{flag}")
+    for nodeid, m in measured:
+        sla_s = f" (SLA {m.sla_s:g}s)" if m.sla_s is not None else ""
+        flag = "  SLA BREACH" if m.breached else ""
+        terminalreporter.write_line(
+            f"{nodeid.split('::')[-1]}: {m.check} = {m.value_s:.3f}s{sla_s}{flag}"
+        )

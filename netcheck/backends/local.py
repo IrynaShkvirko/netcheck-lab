@@ -13,12 +13,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-from netcheck.backends.base import Backend
+from netcheck.backends.base import Backend, LabDegraded
 from netcheck.capabilities import (
     Bridge,
     CaptureHandle,
     Links,
     Ospf,
+    OspfInterface,
     OspfNeighbor,
     PingResult,
     PortVlans,
@@ -30,11 +31,6 @@ from netcheck.devicelog import DeviceLog
 from netcheck.render import port_name, render
 from netcheck.transport.base import CommandResult, TransportError
 from netcheck.transport.docker_exec import DockerExecTransport
-
-
-class LabDegraded(RuntimeError):
-    """The lab containers run but their links are missing; redeploy needed."""
-
 
 _PING = re.compile(r"(\d+) packets transmitted, (\d+) (?:packets )?received")
 
@@ -85,6 +81,9 @@ def parse_bridge_vlans(
             continue  # br0 itself and unmapped ports
         vlans = entry.get("vlans", [])
         vids = tuple(sorted(int(v["vlan"]) for v in vlans))
+        if not vids:
+            out[to_logical[ifname]] = PortVlans("none", ())
+            continue
         access = (
             len(vlans) == 1
             and "PVID" in vlans[0].get("flags", [])
@@ -143,6 +142,75 @@ def frr_config_diff(wanted: str, live: str) -> list[list[str]]:
     return [s for s in steps if s]
 
 
+def _logical_iface(ifname: str, to_logical: dict[str, str]) -> str:
+    """eth2 -> p2; eth1.10 -> p1.10 (VLAN sub-interface keeps its VLAN suffix)."""
+    base, dot, vid = ifname.partition(".")
+    return to_logical.get(base, base) + (f".{vid}" if dot else "")
+
+
+def _real_iface(name: str, port_map: dict[str, str]) -> str:
+    base, dot, vid = name.partition(".")
+    return port_map.get(base, base) + (f".{vid}" if dot else "")
+
+
+def parse_frr_interfaces(config: str, to_logical: dict[str, str]) -> dict[str, OspfInterface]:
+    """OSPF settings per logical interface, from FRR running-config. The only place
+    that reads FRR interface config text (assertions use the normalized result)."""
+    out: dict[str, OspfInterface] = {}
+    for section, lines in frr_sections(config).items():
+        if not section.startswith("interface "):
+            continue
+        name = _logical_iface(section.split()[1], to_logical)
+        fields: dict[str, Any] = {"addresses": []}
+        for ln in lines:
+            words = ln.split()
+            if ln.startswith("ip address ") and len(words) >= 3:
+                fields["addresses"].append(words[2])
+            elif ln.startswith("ip ospf area ") and len(words) >= 4:
+                fields["area"] = words[3]
+            elif ln.startswith("ip ospf hello-interval ") and words[-1].isdigit():
+                fields["hello_interval"] = int(words[-1])
+            elif ln.startswith("ip ospf dead-interval ") and words[-1].isdigit():
+                fields["dead_interval"] = int(words[-1])
+            elif ln.startswith("ip ospf cost ") and words[-1].isdigit():
+                fields["cost"] = int(words[-1])
+            elif ln.startswith("ip ospf network ") and len(words) >= 4:
+                fields["network"] = words[3]
+            elif ln == "ip ospf passive":
+                fields["passive"] = True
+        fields["addresses"] = tuple(fields["addresses"])
+        out[name] = OspfInterface(name=name, **fields)
+    return out
+
+
+def _route_key(r: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(r.get("dst", "")),
+        str(r.get("gateway", "")),
+        str(r.get("dev", "")),
+        str(r.get("scope", "")),
+    )
+
+
+def host_route_diff(wanted: list[dict[str, Any]], live: list[dict[str, Any]]) -> list[str]:
+    """`ip route` commands that turn the live host routes into the wanted ones.
+    Connected routes (protocol kernel) come back with their address and are ignored."""
+
+    def keys(routes: list[dict[str, Any]]) -> set[tuple[str, str, str, str]]:
+        return {_route_key(r) for r in routes if r.get("protocol") != "kernel"}
+
+    want, have = keys(wanted), keys(live)
+    cmds = []
+    for dst, gw, dev, _scope in sorted(have - want):
+        cmds.append(f"ip route del {dst}" + (f" via {gw}" if gw else "") + f" dev {dev}")
+    for dst, gw, dev, scope in sorted(want - have):
+        cmd = f"ip route replace {dst}" + (f" via {gw}" if gw else "") + f" dev {dev}"
+        if scope and scope != "global" and not gw:
+            cmd += f" scope {scope}"
+        cmds.append(cmd)
+    return cmds
+
+
 # ---- capabilities --------------------------------------------------------
 
 
@@ -179,7 +247,23 @@ class FrrOspf(_Base, Ospf):
         return prefixes
 
     def running_config(self) -> str:
+        """FRR config text. Backend-internal (snapshots); not part of the Ospf interface."""
         return self.run("vtysh -c 'show running-config'").check().stdout
+
+    def interface_settings(self) -> dict[str, OspfInterface]:
+        return parse_frr_interfaces(self.running_config(), self.to_logical)
+
+    def set_interface_area(self, port: str, area: int | None) -> None:
+        ifname = _real_iface(port, self.port_map)
+        if area is None:
+            current = self.interface_settings().get(port)
+            if current is None or current.area is None:
+                return  # already out of OSPF
+            change = f"no ip ospf area {current.area}"
+        else:
+            change = f"ip ospf area {area}"
+        args = " ".join(f"-c {shlex.quote(c)}" for c in ("conf t", f"interface {ifname}", change))
+        self.run(f"vtysh {args}").check()
 
 
 class LinuxBridge(_Base, Bridge):
@@ -200,12 +284,22 @@ class LinuxLinks(_Base, Links):
 
     def link_state(self, port: str) -> dict[str, str]:
         (info,) = self.run(f"ip -j link show {self.real(port)}").check().json()
-        return {
-            "port": port,
-            "ifname": info["ifname"],
-            "operstate": info.get("operstate", "?"),
-            "admin": "up" if "UP" in info.get("flags", []) else "down",
-        }
+        return _link_dict(port, info)
+
+    def link_states(self, ports: list[str]) -> dict[str, dict[str, str]]:
+        """All requested ports from one `ip -j link show` (instead of one call per port).
+        Ports missing from the container are left out."""
+        by_name = {i.get("ifname"): i for i in self.run("ip -j link show").check().json() or []}
+        return {p: _link_dict(p, by_name[self.real(p)]) for p in ports if self.real(p) in by_name}
+
+
+def _link_dict(port: str, info: dict[str, Any]) -> dict[str, str]:
+    return {
+        "port": port,
+        "ifname": info["ifname"],
+        "operstate": info.get("operstate", "?"),
+        "admin": "up" if "UP" in info.get("flags", []) else "down",
+    }
 
 
 class LinuxShell(_Base, Shell):
@@ -227,7 +321,16 @@ class LinuxShell(_Base, Shell):
         res = self.run(
             f"ping -n -c {count} -i {interval} -W 1 -w {int(deadline)} {dst}", timeout=deadline + 10
         )
-        return parse_ping(self.device, dst, res.stdout)
+        result = parse_ping(self.device, dst, res.stdout)
+        # ping exits 0 (replies), 1 (no replies) or 2+ (error). No summary line, or
+        # nothing sent, means it never probed: that must not read as "isolated".
+        if res.rc >= 2 or result.sent == 0:
+            detail = (res.stderr or res.stdout).strip().splitlines()
+            raise TransportError(
+                f"{self.device}: ping {dst} did not run (rc={res.rc}): "
+                f"{detail[-1] if detail else 'no output'}"
+            )
+        return result
 
     def add_host_route(self, prefix: str, port: str = "p1") -> None:
         self.run(f"ip route replace {prefix} dev {self.real(port)} scope link").check()
@@ -240,6 +343,10 @@ class LinuxShell(_Base, Shell):
 
     def neighbors(self) -> list[dict[str, str]]:
         return list(self.run("ip -j neigh show").check().json() or [])
+
+    def route_table(self) -> list[dict[str, Any]]:
+        """Backend-internal: the host's routes, for snapshots."""
+        return list(self.run("ip -j route show").check().json() or [])
 
     def start_capture(self, port: str, bpf: str = "") -> CaptureHandle:
         path = f"/tmp/netcheck-{secrets.token_hex(3)}.pcap"
@@ -319,26 +426,31 @@ class LocalBackend(Backend):
         """
         missing = []
         for name, dev in self.devices().items():
-            links = dev.links
-            assert isinstance(links, LinuxLinks)
-            res = links.run("ip -br link show")
-            present = {ln.split()[0].split("@")[0] for ln in res.stdout.splitlines() if ln.strip()}
+            present = dev.links.link_states(list(dev.port_map))
             missing += [
-                f"{name}:{lp} ({real})" for lp, real in dev.port_map.items() if real not in present
+                f"{name}:{lp} ({real})" for lp, real in dev.port_map.items() if lp not in present
             ]
         return missing
 
     def deploy(self, fresh: bool = False) -> bool:
         render(self.intent, self.settings["images"], self.build_dir, self.prefix)
         if self.is_running() and not fresh:
+            built_from = self.state.deployed_intent()
             missing = self.missing_ports()
-            if not missing:
+            if built_from == self.intent.digest and not missing:
                 return False
-            print(f"lab is running but degraded (missing {', '.join(missing)}); redeploying")
+            if missing:
+                print(f"lab is running but degraded (missing {', '.join(missing)}); redeploying")
+            else:
+                print(
+                    f"lab was built from intent {built_from or 'unknown'}, "
+                    f"intent is now {self.intent.digest}; redeploying"
+                )
             self._devices = None
         subprocess.run(
             [*self.clab, "deploy", "-t", str(self.topology_file), "--reconfigure"], check=True
         )
+        self.state.set_deployed_intent(self.intent.digest)
         return True
 
     def destroy(self) -> None:
@@ -383,31 +495,46 @@ class LocalBackend(Backend):
             "frr": {},
             "bridge": {},
             "links": {},
+            "host_routes": {},
         }
         for name, dev in self.devices().items():
-            data["links"][name] = {p: dev.links.link_state(p)["admin"] for p in dev.port_map}
+            states = dev.links.link_states(list(dev.port_map))
+            data["links"][name] = {p: s["admin"] for p, s in states.items()}
             if dev.has(Ospf):
-                data["frr"][name] = dev.ospf.running_config()
+                ospf = dev.ospf
+                assert isinstance(ospf, FrrOspf)
+                data["frr"][name] = ospf.running_config()
+            if dev.role == "host" and dev.has(Shell):
+                shell = dev.shell
+                assert isinstance(shell, LinuxShell)
+                data["host_routes"][name] = shell.route_table()
             if dev.has(Bridge):
                 data["bridge"][name] = {
                     p: [pv.mode, list(pv.vlans)] for p, pv in dev.bridge.vlan_membership().items()
                 }
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         (self.snapshot_dir / f"{snap_id}.json").write_text(json.dumps(data, indent=2))
+        self.state.prune_snapshots()
         return snap_id
 
     def restore(self, snapshot_id: str) -> None:
-        missing = self.missing_ports()
+        data = json.loads((self.snapshot_dir / f"{snapshot_id}.json").read_text())
+        devs = self.devices()
+        live_links = {n: d.links.link_states(list(d.port_map)) for n, d in devs.items()}
+        missing = [
+            f"{n}:{lp} ({real})"
+            for n, d in devs.items()
+            for lp, real in d.port_map.items()
+            if lp not in live_links[n]
+        ]
         if missing:
             raise LabDegraded(
                 f"cannot restore {snapshot_id}: lab links are gone ({', '.join(missing)}). "
                 "A container was probably restarted. Run `make lab-fresh`."
             )
-        data = json.loads((self.snapshot_dir / f"{snapshot_id}.json").read_text())
-        devs = self.devices()
         for name, ports in data["links"].items():
             for port, admin in ports.items():
-                if devs[name].links.link_state(port)["admin"] != admin:
+                if live_links[name][port]["admin"] != admin:
                     devs[name].links.set_link(port, admin == "up")
         for name, ports in data["bridge"].items():
             live = devs[name].bridge.vlan_membership()
@@ -420,6 +547,11 @@ class LocalBackend(Backend):
             ospf = devs[name].ospf
             assert isinstance(ospf, FrrOspf)
             self._restore_frr(name, ospf, config)
+        for name, routes in data.get("host_routes", {}).items():  # older snapshots lack it
+            shell = devs[name].shell
+            assert isinstance(shell, LinuxShell)
+            for cmd in host_route_diff(routes, shell.route_table()):
+                shell.run(cmd).check()
 
     @staticmethod
     def _restore_frr(name: str, ospf: FrrOspf, wanted: str) -> None:

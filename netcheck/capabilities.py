@@ -28,8 +28,26 @@ class Route:
 
 
 @dataclass(frozen=True)
+class OspfInterface:
+    """OSPF settings of one interface, normalized across NOSes (ADR-0002).
+
+    `name` is logical: a port ("p2"), or a VLAN sub-interface ("p1.10").
+    None means "not configured" (the NOS default applies).
+    """
+
+    name: str
+    addresses: tuple[str, ...] = ()
+    area: str | None = None
+    hello_interval: int | None = None
+    dead_interval: int | None = None
+    passive: bool = False
+    cost: int | None = None
+    network: str | None = None
+
+
+@dataclass(frozen=True)
 class PortVlans:
-    mode: str  # access | trunk
+    mode: str  # access | trunk | none (in the bridge but carrying no VLAN)
     vlans: tuple[int, ...]
 
 
@@ -71,7 +89,13 @@ class Ospf(ABC):
     def lsdb_prefixes(self) -> set[str]: ...
 
     @abstractmethod
-    def running_config(self) -> str: ...
+    def interface_settings(self) -> dict[str, OspfInterface]:
+        """OSPF settings per logical interface. Assertions compare these with the
+        intent; they never parse NOS config text themselves."""
+
+    @abstractmethod
+    def set_interface_area(self, port: str, area: int | None) -> None:
+        """Put a logical interface in an OSPF area, or take it out (area=None)."""
 
 
 class Bridge(ABC):
@@ -88,6 +112,11 @@ class Links(ABC):
 
     @abstractmethod
     def link_state(self, port: str) -> dict[str, str]: ...
+
+    def link_states(self, ports: list[str]) -> dict[str, dict[str, str]]:
+        """State of several ports. Backends override this to read them in one call;
+        a port that does not exist is left out of the result."""
+        return {p: self.link_state(p) for p in ports}
 
 
 class Shell(ABC):

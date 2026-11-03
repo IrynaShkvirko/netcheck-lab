@@ -13,7 +13,15 @@ from pathlib import Path
 from typing import Any
 
 from netcheck.backends.base import Backend
-from netcheck.capabilities import Bridge, Links, Ospf, OspfNeighbor, PortVlans, Route
+from netcheck.capabilities import (
+    Bridge,
+    Links,
+    Ospf,
+    OspfInterface,
+    OspfNeighbor,
+    PortVlans,
+    Route,
+)
 from netcheck.device import Device
 from netcheck.devicelog import DeviceLog
 from netcheck.intent import Intent
@@ -54,9 +62,13 @@ class NvueOspf(_NvueBase, Ospf):
     def lsdb_prefixes(self) -> set[str]:
         raise NotImplementedError
 
-    def running_config(self) -> str:
-        res = self.t.request("GET", "", params={"rev": "applied"})
-        return str(res.body)
+    def interface_settings(self) -> dict[str, OspfInterface]:
+        raise NotImplementedError(
+            "map NVUE interface/<swpN>/router/ospf to OspfInterface (UNVERIFIED path)"
+        )
+
+    def set_interface_area(self, port: str, area: int | None) -> None:
+        raise NotImplementedError("PATCH interface OSPF area inside a revision, then apply")
 
 
 class NvueBridge(_NvueBase, Bridge):
@@ -117,6 +129,8 @@ class NvidiaAirBackend(Backend):
                     self.password,
                     log,
                     port=self.settings.get("nvue_port", 8765),
+                    verify_tls=self.settings.get("ca_bundle")
+                    or self.settings.get("verify_tls", True),
                 )
                 ports = {
                     ep.port: port_name(ep.port, self.prefix)

@@ -22,6 +22,8 @@ class DiffLine:
 class FailureReport:
     # 1. verdict
     verdict: str
+    # test steps run so far, filled by the pytest plugin ("which step failed")
+    steps: list[str] = field(default_factory=list)
     # 2. expected vs actual
     expected: str = ""
     actual: str = ""
@@ -50,6 +52,10 @@ class FailureReport:
     # ---- rendering -----------------------------------------------------
     def render(self) -> str:
         out: list[str] = [f"INTENT VIOLATED: {self.verdict}", ""]
+        if self.steps:
+            out.append("Steps:")
+            out += [f"  {s}" for s in self.steps]
+            out.append("")
         if self.expected or self.actual:
             out += [f"Expected: {self.expected}", f"Actual:   {self.actual}", ""]
         if self.state_diff:

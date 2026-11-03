@@ -11,6 +11,10 @@ local:
 nvidia:
   port_prefix: swp          # logical p1 -> swp1
   nvue_port: 8765
+  # TLS: verify by default. Air switches use self-signed certificates: point ca_bundle at
+  # their CA, or set verify_tls: false for a throwaway lab only.
+  verify_tls: true
+  # ca_bundle: /path/to/air-ca.pem
   nvue_user: cumulus
   # Credentials and the Air token come from the environment:
   #   NVIDIA_AIR_TOKEN, NVUE_PASSWORD

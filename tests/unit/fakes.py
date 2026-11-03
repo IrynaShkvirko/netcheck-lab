@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from netcheck.backends.base import Backend
+from netcheck.backends.local import parse_frr_interfaces
 from netcheck.capabilities import (
     Bridge,
     CaptureHandle,
     Links,
     Ospf,
+    OspfInterface,
     OspfNeighbor,
     PingResult,
     PortVlans,
@@ -30,6 +33,7 @@ class FakeOspf(Ospf):
         self.rib: dict[str, Route] = {}
         self.lsdb: set[str] = set()
         self.config = ""
+        self.area_overrides: dict[str, int | None] = {}
 
     def neighbors(self) -> list[OspfNeighbor]:
         return self.nbrs
@@ -40,8 +44,17 @@ class FakeOspf(Ospf):
     def lsdb_prefixes(self) -> set[str]:
         return self.lsdb
 
-    def running_config(self) -> str:
-        return self.config
+    def interface_settings(self) -> dict[str, OspfInterface]:
+        """Parsed from `config` (FRR format, ethN = pN) with the backend's own parser,
+        then any set_interface_area overrides applied."""
+        settings = parse_frr_interfaces(self.config, {f"eth{i}": f"p{i}" for i in range(1, 10)})
+        for port, area in self.area_overrides.items():
+            current = settings.get(port, OspfInterface(port))
+            settings[port] = replace(current, area=None if area is None else str(area))
+        return settings
+
+    def set_interface_area(self, port: str, area: int | None) -> None:
+        self.area_overrides[port] = area
 
 
 class FakeBridge(Bridge):
@@ -135,6 +148,8 @@ class FakeWorld:
         ).name
         _, pa, _ = host_attachment(self.intent, src)
         _, pb, _ = host_attachment(self.intent, dst)
+        if not pa or not pb:
+            return True  # one end is behind a router: the fake world routes it
         va = set(self.bridge.ports[pa].vlans)
         vb = set(self.bridge.ports[pb].vlans)
         return bool(va & vb)
@@ -143,13 +158,18 @@ class FakeWorld:
 class FakeBackend(Backend):
     name = "fake"
 
-    def __init__(self, intent: Intent, devices: dict[str, Device]) -> None:
-        super().__init__(intent, {}, Path("."))
+    def __init__(self, intent: Intent, devices: dict[str, Device], root: Path) -> None:
+        super().__init__(intent, {}, root)
         self._devices = devices
         self.restored: list[str] = []
+        self.deploys: list[bool] = []
+        self.deploy_result = False
+        self.restore_error: Exception | None = None
+        self.snapshots = 0
 
     def deploy(self, fresh: bool = False) -> bool:
-        return False
+        self.deploys.append(fresh)
+        return self.deploy_result or fresh
 
     def destroy(self) -> None:
         pass
@@ -161,9 +181,12 @@ class FakeBackend(Backend):
         return self._devices
 
     def snapshot(self, label: str) -> str:
-        return f"{label}-fake"
+        self.snapshots += 1
+        return f"{label}-fake-{self.snapshots}"
 
     def restore(self, snapshot_id: str) -> None:
+        if self.restore_error is not None:
+            raise self.restore_error
         self.restored.append(snapshot_id)
 
     def environment(self) -> dict[str, str]:
@@ -176,6 +199,7 @@ def fast_timing() -> Timing:
         name: Threshold(name, timeout=0.05, poll=0.01, sla=5.0)
         for name in (
             "route_installed",
+            "reachability",
             "ospf_neighbor_full",
             "interface_up",
             "reconverge_local_link",
@@ -215,10 +239,48 @@ def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
     lab = Lab(
         intent=intent,
         expected=expected,
-        backend=FakeBackend(intent, devices),
+        backend=FakeBackend(intent, devices, tmp),
         devices=devices,
         timing=fast_timing(),
         artifacts_dir=tmp,
         test_artifacts=tmp,
     )
     return lab, parts
+
+
+# ---- a healthy lab, for running the real tests/lab files on fakes -----------------
+
+_R1_CONFIG = (
+    "interface eth1.10\n ip address 10.0.10.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\n"
+    "interface eth2\n ip address 10.0.12.0/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
+    " ip ospf hello-interval 1\nexit\n!\n"
+    "interface eth3\n ip address 10.0.12.2/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
+    " ip ospf hello-interval 1\nexit\n!\n"
+)
+_R2_CONFIG = (
+    "interface eth1\n ip address 10.0.12.1/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
+    " ip ospf hello-interval 1\nexit\n!\n"
+    "interface eth2\n ip address 10.0.12.3/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
+    " ip ospf hello-interval 1\nexit\n!\n"
+    "interface eth3\n ip address 10.0.30.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\n"
+)
+
+
+def make_healthy(lab: Lab, parts: dict[str, Any]) -> None:
+    """Fill the fakes with the state of a working campus-mini lab. r1's route to h4's LAN
+    follows r1's primary link: via 10.0.12.1 while p2 is up, via 10.0.12.3 when it is down."""
+    r1, r2 = parts["ospf_r1"], parts["ospf_r2"]
+    r1.config, r2.config = _R1_CONFIG, _R2_CONFIG
+    r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2"), OspfNeighbor("2.2.2.2", "Full", "p3")]
+    r2.nbrs = [OspfNeighbor("1.1.1.1", "Full", "p1"), OspfNeighbor("1.1.1.1", "Full", "p2")]
+    r1_links = lab["r1"].links
+
+    def r1_routes() -> dict[str, Route]:
+        primary_up = r1_links.link_state("p2")["admin"] == "up"
+        hop = "10.0.12.1" if primary_up else "10.0.12.3"
+        return {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", (hop,), True)}
+
+    r1.routes = r1_routes  # type: ignore[method-assign]
+    r2.rib = {"10.0.10.0/24": Route("10.0.10.0/24", "ospf", ("10.0.12.0",), True)}
+    r1.lsdb = {"10.0.30.0/24"}
+    r2.lsdb = {"10.0.10.0/24"}

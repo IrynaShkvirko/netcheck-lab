@@ -11,6 +11,8 @@ from netcheck.lab import Lab, set_current
 
 from .fakes import build_fake_lab
 
+pytest_plugins = ["pytester"]
+
 ROOT = Path(__file__).resolve().parents[2]
 
 

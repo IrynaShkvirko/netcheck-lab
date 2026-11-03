@@ -5,8 +5,8 @@ import pytest
 from netcheck.assertions import (
     assert_isolated,
     assert_ospf_neighbor_full,
+    assert_ospf_routes_match_intent,
     assert_route_present,
-    interface_blocks,
 )
 from netcheck.capabilities import OspfNeighbor, PortVlans, Route
 from netcheck.report import FailureReport, IntentViolation
@@ -86,12 +86,24 @@ def test_report_renders_all_eight_parts() -> None:
         assert part in text
 
 
-def test_interface_blocks_parse_frr_config() -> None:
+def test_parse_frr_interfaces_normalizes_settings() -> None:
+    from netcheck.backends.local import parse_frr_interfaces
+
     cfg = (
-        "interface eth2\n ip ospf area 0\n ip ospf cost 10\n!\n"
-        "router ospf\n ospf router-id 1.1.1.1\n"
+        "interface eth1.10\n ip address 10.0.10.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\n"
+        "interface eth2\n ip address 10.0.12.0/31\n ip ospf area 0.0.0.0\n ip ospf cost 10\n"
+        " ip ospf dead-interval 4\n ip ospf hello-interval 1\n"
+        " ip ospf network point-to-point\nexit\n!\nrouter ospf\n ospf router-id 1.1.1.1\n"
     )
-    assert interface_blocks(cfg) == {"eth2": ["ip ospf area 0", "ip ospf cost 10"]}
+    s = parse_frr_interfaces(cfg, {"eth1": "p1", "eth2": "p2"})
+    assert s["p1.10"].passive and s["p1.10"].addresses == ("10.0.10.1/24",)
+    assert (s["p2"].area, s["p2"].cost, s["p2"].hello_interval, s["p2"].dead_interval) == (
+        "0.0.0.0",
+        10,
+        1,
+        4,
+    )
+    assert s["p2"].network == "point-to-point"
 
 
 def test_adjacency_is_checked_per_link(fake) -> None:  # type: ignore[no-untyped-def]
@@ -106,3 +118,78 @@ def test_adjacency_is_checked_per_link(fake) -> None:  # type: ignore[no-untyped
     assert report.actual == "state absent"
     assert "only p3 is down" in report.evidence["diagnosis"][0]
     assert list(k for k in report.evidence if "link" in k) == ["r1:p3 link (backup)"]
+
+
+def _frr(hello: int, *ifaces: str) -> str:
+    """Router config in FRR running-config format for the given interfaces."""
+    parts = []
+    for ifname in ifaces:
+        parts.append(
+            f"interface {ifname}\n ip ospf area 0\n ip ospf dead-interval 4\n"
+            f" ip ospf hello-interval {hello}\n ip ospf network point-to-point\nexit\n!"
+        )
+    return "\n".join(parts) + "\n"
+
+
+R1_RIB = {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", ("10.0.12.1",), True)}
+R2_RIB = {"10.0.10.0/24": Route("10.0.10.0/24", "ospf", ("10.0.12.0",), True)}
+
+
+def test_routes_match_intent_passes(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    parts["ospf_r1"].rib, parts["ospf_r2"].rib = R1_RIB, R2_RIB
+    assert_ospf_routes_match_intent()
+
+
+def test_routes_match_intent_waits_for_convergence(fake) -> None:  # type: ignore[no-untyped-def]
+    """Right after a deploy the routes appear a moment later: that is not a failure."""
+    lab, parts = fake
+    parts["ospf_r2"].rib = R2_RIB
+    calls = {"n": 0}
+
+    def r1_routes() -> dict[str, Route]:
+        calls["n"] += 1
+        return R1_RIB if calls["n"] > 1 else {}
+
+    parts["ospf_r1"].routes = r1_routes
+    assert_ospf_routes_match_intent()
+    assert calls["n"] >= 2
+
+
+def test_routes_match_intent_diagnoses_no_adjacency(fake) -> None:  # type: ignore[no-untyped-def]
+    """Both routers lose each other's prefix: no adjacency on any link, and the
+    report points at the OSPF setting that differs from the intent."""
+    lab, parts = fake
+    parts["ospf_r1"].config = _frr(1, "eth2", "eth3")
+    parts["ospf_r2"].config = _frr(5, "eth1", "eth2")  # hello mismatch on both links
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    report = exc.value.report
+    assert report.actual == "2 missing, 0 unexpected"
+    assert [(d.where, d.expected) for d in report.state_diff] == [
+        ("r1 routing table", "10.0.30.0/24"),
+        ("r2 routing table", "10.0.10.0/24"),
+    ]
+    assert report.evidence["r1 neighbors"] == ["(none)"]
+    assert "no OSPF adjacency between the routers on any link" in report.evidence["diagnosis"][0]
+    assert [(d.where, d.expected, d.actual) for d in report.drift] == [
+        ("r2:p1 (primary) hello interval", "1", "5"),
+        ("r2:p2 (backup) hello interval", "1", "5"),
+    ]
+
+
+def test_routes_match_intent_diagnoses_not_advertising(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    r1, r2 = parts["ospf_r1"], parts["ospf_r2"]
+    r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2"), OspfNeighbor("2.2.2.2", "Full", "p3")]
+    r2.nbrs = [OspfNeighbor("1.1.1.1", "Full", "p1"), OspfNeighbor("1.1.1.1", "Full", "p2")]
+    r2.rib = R2_RIB  # r2 is fine; r1 is missing r2's LAN
+    r2.config = "interface eth3\n ip address 10.0.30.1/24\nexit\n!\n"  # no 'ip ospf area 0'
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    report = exc.value.report
+    assert report.evidence["diagnosis"] == [
+        "r1: adjacency Full, but r2 is not advertising 10.0.30.0/24"
+    ]
+    (drift,) = report.drift
+    assert drift.where == "r2:p3 (eth3)" and drift.actual == "not in OSPF"

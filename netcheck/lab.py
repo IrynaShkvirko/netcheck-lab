@@ -17,6 +17,18 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class StepRecord:
+    number: int
+    title: str
+    status: str = "running"  # running | passed | failed
+    seconds: float = 0.0
+
+    def line(self) -> str:
+        mark = {"passed": "ok", "failed": "FAILED", "running": "..."}[self.status]
+        return f"{self.number}. {self.title} [{mark}, {self.seconds:.1f}s]"
+
+
+@dataclass
 class Lab:
     intent: Intent
     expected: dict[str, Any]
@@ -29,6 +41,7 @@ class Lab:
     test_artifacts: Path = Path("artifacts")
     snapshot_id: str = ""
     log_marks: dict[str, int] = field(default_factory=dict)
+    steps: list[StepRecord] = field(default_factory=list)
 
     def __getitem__(self, name: str) -> Device:
         return self.devices[name]

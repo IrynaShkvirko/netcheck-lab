@@ -163,7 +163,7 @@ ol.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
     <div class="layers" id="layers">
       <div class="layer" data-layer="intent"><b>Intent</b><span>intent/lab.yaml</span></div>
       <div class="layer" data-layer="fixture"><b>Fixture</b><span>pytest_plugin.py</span></div>
-      <div class="layer" data-layer="assertion"><b>Assertion</b><span>assertions.py</span></div>
+      <div class="layer" data-layer="assertion"><b>Assertion</b><span>assertions/</span></div>
       <div class="layer" data-layer="capability"><b>Capability</b><span>Ospf · Bridge · Links · Shell</span></div>
       <div class="layer" data-layer="transport"><b>Transport</b><span>docker exec · logs every call</span></div>
       <div class="layer" data-layer="device"><b>Device</b><span>clab-campus-mini-*</span></div>
@@ -337,8 +337,8 @@ const NODES = {
 
 const SNAPSHOT_STEP = {
   t: "Snapshot before the test", layer: "fixture", nodes: ["h1","h2","h3","h4","sw1","r1","r2"], links: [],
-  p: "The autouse fixture <code>_isolate</code> saves the lab state before the test body runs: link up/down on every port, the FRR config of each router and the VLANs of each switch port. It is written to <code>.netcheck/snapshots/&lt;id&gt;.json</code>, and the ID goes into any failure report.",
-  code: "ip -j link show eth1        # every port, every node\nvtysh -c 'show running-config'   # r1, r2\nbridge -j vlan show         # sw1",
+  p: "The autouse fixture <code>_isolate</code> saves the lab state before the test body runs: link up/down on every port, the FRR config of each router, the VLANs of each switch port and each host's routes. If restoring it afterwards fails, the run stops rather than continuing on a broken lab. It is written to <code>.netcheck/snapshots/&lt;id&gt;.json</code>, and the ID goes into any failure report.",
+  code: "ip -j link show              # one call per node, all ports\nvtysh -c 'show running-config'   # r1, r2\nbridge -j vlan show         # sw1\nip -j route show            # every host",
   where: "netcheck/pytest_plugin.py · _isolate → LocalBackend.snapshot()"
 };
 
@@ -353,7 +353,7 @@ const SCENARIOS = [
       { t: "The assertion reads the intent", layer: "assertion", nodes: ["h1","h3"], links: [],
         p: "<code>assert_isolated(h1, h3)</code> looks up both addresses in the intent and the ping window in <code>timing.yaml</code>: 4 seconds, so 20 pings at 0.2 s.",
         code: "ip_a, ip_b = 10.0.10.11, 10.0.20.13\nwindow = timing['isolation_window'].window   # 4 s",
-        where: "netcheck/assertions.py · assert_isolated" },
+        where: "netcheck/assertions/l2.py · assert_isolated" },
       { t: "Force the question onto layer 2", layer: "capability", nodes: ["h1","h3"], links: [],
         p: "Without this step the test could pass for the wrong reason: h1 would send to its gateway r1, which has no route to VLAN 20. A direct route makes h1 ask for h3 with ARP, so a reply can only mean they share a broadcast domain. Each route is registered for cleanup the moment it is added.",
         code: "# Shell.add_host_route on h1 and on h3\nip route replace 10.0.20.13/32 dev eth1 scope link\nip neigh flush dev eth1\ncleanup.register('remove on-link route …', undo)",
@@ -370,7 +370,7 @@ const SCENARIOS = [
         outcome: true,
         p: "<span class='pill pass'>pass</span> 0 replies: the hosts are isolated.<br><span class='pill fail'>fail</span> any reply: read sw1's live VLANs, compare them with <code>expected_state.json</code>, and raise a report naming the drifted port (with the wrong-VLAN fault: <code>sw1:p3</code> expected VLAN 20, actual VLAN 10).",
         code: "live = sw1.bridge.vlan_membership()      # bridge -j vlan show\nexpected = expected_state['vlan_membership']['sw1']\n→ drift: sw1:p3  access VLAN 20 ≠ access VLAN 10",
-        where: "assertions.py · _vlan_drift → FailureReport" },
+        where: "assertions/l2.py · vlan_drift → FailureReport" },
       { t: "Clean up, then restore", layer: "fixture", nodes: ["h1","h3"], links: [],
         p: "The cleanup registry runs newest first: stop the capture, remove h3's route, remove h1's route. Then the snapshot is compared with the live lab and only differences are put back. Here nothing differs, so the restore does nothing.",
         code: "cleanup.run()          # LIFO undo\nbackend.restore(snap)  # diff, apply only what changed",
@@ -386,7 +386,7 @@ const SCENARIOS = [
       { t: "The assertion knows which link", layer: "assertion", nodes: ["r1"], links: ["backup"],
         p: "<code>assert_ospf_neighbor_full(r1, r2, port='p3')</code> wants a neighbor with r2's router ID <b>and</b> local port p3. Matching on the router ID alone would pass while the backup link is down.",
         code: "rid = '2.2.2.2'\nmatch: n.router_id == rid and n.port == 'p3'",
-        where: "netcheck/assertions.py · assert_ospf_neighbor_full" },
+        where: "netcheck/assertions/ospf.py · assert_ospf_neighbor_full" },
       { t: "Ospf capability asks FRR", layer: "transport", nodes: ["r1"], links: [],
         p: "The router answers in JSON. The parser keeps the state before the slash and maps the interface back to a logical port with the device's port map (eth3 → p3), so the test never sees eth names.",
         code: "docker exec -i clab-campus-mini-r1 sh -c \\\n  \"vtysh -c 'show ip ospf neighbor json'\"\n\n{\"neighbors\": {\"2.2.2.2\": [\n  {\"nbrState\": \"Full/-\", \"ifaceName\": \"eth3:10.0.12.2\"}, …]}}\n→ OspfNeighbor('2.2.2.2', 'Full', 'p3')",
@@ -398,7 +398,7 @@ const SCENARIOS = [
       { t: "Verdict", layer: "assertion", nodes: ["r1","r2"], links: ["backup"], outcome: true,
         p: "<span class='pill pass'>pass</span> neighbor Full on p3.<br><span class='pill fail'>fail</span> the report shows both routers' neighbors, says whether another link to r2 is still Full, and shows only the link that failed, with its admin and operational state.",
         code: "diagnosis: r1 is Full with r2 via p2; only p3 is down\nr1:p3 link (backup): operstate DOWN, admin down",
-        where: "assertions.py · failure branch" },
+        where: "assertions/ospf.py · failure branch (guarded evidence)" },
     ] },
   { key: "route", label: "Route learned", id: "tests/lab/test_ospf.py::test_ospf_route_is_learned[r1-10.0.30.0/24]",
     steps: [
@@ -414,11 +414,11 @@ const SCENARIOS = [
       { t: "Poll until installed", layer: "assertion", nodes: ["r1"], links: [],
         p: "Asked every 0.5 s for up to 15 s. Time to install is recorded against a 5 s SLA.",
         code: "route_installed: {sla: 5, timeout: 15, poll: 0.5}",
-        where: "assertions.py · assert_route_present" },
+        where: "assertions/ospf.py · assert_route_present" },
       { t: "Verdict, and why it is missing", layer: "assertion", nodes: ["r1","r2"], links: ["r2-h4"], outcome: true,
         p: "<span class='pill pass'>pass</span> route installed.<br><span class='pill fail'>fail</span> the report separates two causes: adjacency broken, or adjacency fine but the prefix never advertised. If neighbors are Full and the prefix is not in OSPF's own table, it reads r2's config and shows the interface that left OSPF.",
-        code: "diagnosis: adjacencies are Full but the prefix is not in the LSDB:\n  r2 is not advertising 10.0.30.0/24\ndrift: r2:p3 (eth3)  expected 'ip ospf area 0', actual 'not in OSPF'",
-        where: "assertions.py · _route_missing_report, _ospf_interface_drift" },
+        code: "diagnosis: r1: adjacency Full, but r2 is not advertising 10.0.30.0/24\ndrift: r2:p3 (eth3)  expected 'OSPF area 0', actual 'not in OSPF'",
+        where: "assertions/ospf.py · _diagnose, interface_drift (via Ospf.interface_settings)" },
     ] },
   { key: "fail", label: "Failover", id: "tests/lab/test_failover.py::test_primary_link_failure_reroutes_via_backup",
     steps: [

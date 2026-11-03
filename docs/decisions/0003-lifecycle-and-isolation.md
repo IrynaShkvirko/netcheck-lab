@@ -45,6 +45,25 @@ nothing on stderr. Replaced with `frr_config_diff`: compare snapshot and live co
 section, apply only the missing lines (and `no <line>` for extra ones) through `vtysh`,
 then re-read and verify. No restore runs when nothing changed, which is the common case.
 
+### Revision (2026-11-03, code review)
+
+- **Baseline policy.** A baseline is taken only right after a real deploy (or when none
+  exists), never from a reused lab, which may still carry an injected fault.
+  `Backend.up()` holds this rule for the CLI and the pytest session alike.
+- **Active faults and deployed intent.** `.netcheck/active-faults` lists faults injected
+  since the last baseline restore; every pytest run prints them in its header.
+  `.netcheck/deployed-intent` records the intent digest the lab was built from; a running
+  lab built from another intent is redeployed.
+- **Teardown failures are visible.** A failed snapshot restore stops the session
+  (exit code 3), because later results would be blamed on the wrong tests. A failed undo
+  step with a successful restore is reported as an error at teardown, not as a warning.
+- **Host routes** are part of snapshots and restored by diff (connected routes ignored).
+- **Per-test artifacts** are cleared when the test starts, so old reports never sit next
+  to new ones.
+- **Serial only.** Lab tests refuse pytest-xdist workers: all workers would drive the same
+  containers.
+- **Snapshots are pruned** to the newest 50, never deleting the baseline.
+
 ## Consequences
 
 - Registry first, snapshot second: the registry undoes test actions in reverse

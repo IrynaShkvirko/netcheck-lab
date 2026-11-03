@@ -8,6 +8,11 @@ from typing import Any
 
 from netcheck.device import Device
 from netcheck.intent import Intent
+from netcheck.labstate import LabState
+
+
+class LabDegraded(RuntimeError):
+    """The lab is running but not usable as deployed (e.g. links lost); redeploy needed."""
 
 
 class Backend(ABC):
@@ -18,7 +23,23 @@ class Backend(ABC):
         self.intent = intent
         self.settings = settings
         self.root = root
-        self.snapshot_dir = root / ".netcheck" / "snapshots"
+        self.state = LabState(root)
+        self.snapshot_dir = self.state.snapshots
+
+    def up(self, fresh: bool = False) -> tuple[bool, str]:
+        """Deploy or reuse the lab and make sure a trustworthy baseline exists.
+
+        A baseline is taken only right after a real deploy (or if none exists yet),
+        never from a reused lab, which may still carry an injected fault. Returns
+        (deployed, baseline snapshot ID).
+        """
+        deployed = self.deploy(fresh=fresh)
+        baseline = self.state.baseline()
+        if deployed or baseline is None:
+            baseline = self.snapshot("baseline")
+            self.state.set_baseline(baseline)
+            self.state.clear_faults()
+        return deployed, baseline
 
     @abstractmethod
     def deploy(self, fresh: bool = False) -> bool:

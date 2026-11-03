@@ -56,3 +56,10 @@ Values live in `timing.yaml`, per backend profile, and may reference intent time
 
 - Every measured value lands in JUnit `<properties>`, so trends can be charted later.
 - The NVIDIA profile will need its own numbers once Air boot times are measured.
+
+## Revision (2026-11-03, code review)
+
+- Reachability has its own entry (`reachability: timeout 15 s, poll 0.5 s` locally) instead
+  of borrowing `route_installed`.
+- The failover test now checks the starting path: before the failure, traffic must use the
+  primary next hop. Without that, a lab already on the backup path "converged" in 0 s.
