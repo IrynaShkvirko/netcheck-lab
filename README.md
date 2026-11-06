@@ -242,6 +242,7 @@ Start with the error text: command failures name the container they ran on
 | Permission errors under `build/` on a Mac-mounted folder | File sharing between macOS and the VM | Copy the repo into the VM's home (`cp -r /Users/<you>/.../netcheck-lab ~/`) and run there |
 | Timing SLA failures on a slow or busy machine | Shared CPU makes timings noisy | `NETCHECK_TIME_FACTOR=2` for timeouts, `NETCHECK_SLA_MODE=record` to record SLAs without failing |
 | `make check` fails on mypy imports | Dev dependencies missing | `make install` (installs the type stubs) |
+| `uv run` fails: "Querying Python at .../.venv/bin/python failed" | The Mac and the VM shared one `.venv` and the other side replaced it | Use `make` targets (each OS gets its own `.venv-linux` / `.venv-darwin`), or in the VM `export UV_PROJECT_ENVIRONMENT=.venv-linux` in `~/.bashrc` |
 
 Useful commands when something looks wrong:
 
@@ -274,9 +275,22 @@ def test_vlan_membership_matches_intent(lab: Lab, switch_name: str) -> None:
     with step(f"Read the live VLAN membership from {switch_name}"):
         live = switch.bridge.vlan_membership()
 
-    with step(f"Compare each of the {len(expected)} ports: mode and VLANs"):
-        check_vlan_membership(switch_name, expected, live)
+    for port, spec in sorted(expected.items()):
+        intended = describe_vlans(spec["mode"], spec["vlans"])
+        with step(f"Check {switch_name}:{port} is {intended}", continue_on_failure=True):
+            check_port_vlans(switch_name, port, expected, live)
+
+    with step(f"Check {switch_name} has no bridge ports the intent does not list",
+              continue_on_failure=True):
+        check_no_extra_ports(switch_name, expected, live)
 ```
+
+`continue_on_failure=True` makes a **soft step** (an idea taken from pyATS, see ADR-0006): a
+failed check is recorded as `[FAILED, continued]` and the next port is still checked. When the
+test ends it fails with one report that lists every bad port. The last step catches a port
+someone added to the bridge outside the intent (the backend reports it under its real name,
+such as `eth9`). Use soft steps only for independent checks that just read and compare; a
+setup step that fails should stop the test.
 
 Rules that keep the suite honest:
 
@@ -310,6 +324,7 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
 | `netcheck/device.py`, `capabilities.py` | composition: devices hold capabilities |
 | `netcheck/transport/` | `docker exec` and NVUE REST transports, each logging every call |
 | `netcheck/backends/` | `local` (Containerlab) and `nvidia` (Air) |
+| `netcheck/steps.py` | named test steps; `continue_on_failure=True` for soft steps that report every failed check in one run |
 | `netcheck/assertions/` | domain assertions that collect evidence before failing: `l2.py` (VLANs, isolation), `reachability.py`, `ospf.py`, `common.py` (guarded evidence, captures) |
 | `netcheck/labstate.py` | baseline, active faults and deployed-intent markers in `.netcheck/` |
 | `netcheck/convergence.py` | traffic-based reconvergence measurement |
@@ -327,6 +342,7 @@ See [`docs/decisions/`](docs/decisions/README.md) (and [`docs/backend-map.html`]
 3. [Deploy once; snapshot + cleanup registry per test](docs/decisions/0003-lifecycle-and-isolation.md)
 4. [Thresholds from protocol timers; SLA vs timeout](docs/decisions/0004-timing-and-thresholds.md)
 5. [Failure reporting](docs/decisions/0005-failure-reporting.md)
+6. [pytest, not pyATS; soft steps borrowed from it](docs/decisions/0006-pyats-considered.md)
 
 ## Timing
 

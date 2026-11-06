@@ -48,22 +48,5 @@ Artifacts are written to `artifacts/<test-id>/` and uploaded by CI.
 - Assertions must collect evidence before raising; this is part of each assertion's
   contract and is unit-tested with fake devices.
 - Device logs are attached for failed tests only, keeping passing runs readable.
-
-## Revision (2026-11-03, code review)
-
-- Evidence collection is guarded. If reading evidence fails (often because the device that
-  broke is the one being asked), the report gets an `evidence unavailable` section and the
-  verdict stays; before, the error replaced the whole report.
-- A ping that never ran (container down, tool missing) is an error, not "0 replies". An
-  isolation check with no probes sent is reported as inconclusive and fails.
-- Device logs are bounded (5000 entries per device, responses cut at 8000 characters), and
-  secret-looking fields in NVUE API bodies are redacted before they reach CI artifacts.
-
-## Revision (2026-11-03, readable tests)
-
-Lab tests are written as named steps (`netcheck.steps.step`). The steps of the failing test
-are the first section of its report, the failed one marked, so the reader sees where the test
-stopped before reading the evidence. Failures that are not intent violations (plain asserts,
-errors) get the step list as an extra section. Steps are logged live with
-`make test-lab-live`.
-
+- Soft steps (ADR-0006): when several independent checks fail in one test, the plugin
+  combines their reports into one, so a run lists every failed check.

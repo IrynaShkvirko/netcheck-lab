@@ -6,7 +6,7 @@ import pytest
 
 from netcheck.assertions import assert_isolated
 from netcheck.backends.local import LinuxShell
-from netcheck.capabilities import PingResult, Route
+from netcheck.capabilities import PingResult, PortVlans, Route
 from netcheck.convergence import measure_reconvergence
 from netcheck.devicelog import DeviceLog
 from netcheck.report import IntentViolation
@@ -404,21 +404,25 @@ def lab(tmp_path_factory):
     the_lab, parts = build_fake_lab(load_intent({intent!r}),
                                     Path(str(tmp_path_factory.mktemp("art"))))
     make_healthy(the_lab, parts)
-    if {wrong_vlan!r}:
-        parts["bridge"].ports["p3"] = PortVlans("access", (10,))
+    for port, vlan in {bad_ports!r}.items():  # injected wrong-VLAN faults
+        parts["bridge"].ports[port] = PortVlans("access", (vlan,))
     token = set_current(the_lab)
     yield the_lab
     token.var.reset(token)
 """
 
 
-def _run_lab_suite(pytester, wrong_vlan: bool = False, *args: str):  # type: ignore[no-untyped-def]
+def _run_lab_suite(  # type: ignore[no-untyped-def]
+    pytester, wrong_vlan: bool = False, *args: str, bad_ports: dict[str, int] | None = None
+):
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[2]
     lab_dir = repo / "tests" / "lab"
+    if bad_ports is None:
+        bad_ports = {"p3": 10} if wrong_vlan else {}
     conftest = (lab_dir / "conftest.py").read_text() + _LAB_CONFTEST.format(
-        repo=str(repo), intent=str(repo / "intent/lab.yaml"), wrong_vlan=wrong_vlan
+        repo=str(repo), intent=str(repo / "intent/lab.yaml"), bad_ports=bad_ports
     )
     pytester.makeconftest(conftest)
     for f in lab_dir.glob("test_*.py"):
@@ -494,3 +498,114 @@ def test_interface_settings_mismatch_is_reported_per_port(fake) -> None:  # type
         "1",
         "5",
     )
+
+
+# ---- soft steps (continue_on_failure) -------------------------------------------------
+
+
+def test_soft_step_records_the_failure_and_the_test_goes_on(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.steps import soft_failure_report, step
+
+    lab, _ = fake
+    reached = []
+    for port in ("p1", "p2", "p3"):
+        with step(f"check {port}", continue_on_failure=True):
+            reached.append(port)
+            assert port != "p2", f"{port} is wrong"
+    assert reached == ["p1", "p2", "p3"]
+    assert [(s.status, s.continued) for s in lab.steps] == [
+        ("passed", False),
+        ("failed", True),
+        ("passed", False),
+    ]
+    assert lab.steps[1].line().startswith("2. check p2 [FAILED, continued, ")
+    assert lab.steps[1].line().endswith(" - p2 is wrong")
+    report = soft_failure_report(lab.steps)
+    assert report is not None
+    assert (report.verdict, report.actual) == ("p2 is wrong", "1 of 3 failed (steps 2)")
+    (evidence,) = report.evidence["step 2: check p2"]  # pytest's assert explanation is kept
+    assert evidence.startswith("p2 is wrong")
+
+
+def test_soft_step_still_stops_on_errors_that_are_not_check_failures(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.steps import soft_failure_report, step
+
+    lab, _ = fake
+    with pytest.raises(ConnectionError), step("read the switch", continue_on_failure=True):
+        raise ConnectionError("switch unreachable")
+    assert lab.steps[0].status == "failed" and not lab.steps[0].continued
+    assert soft_failure_report(lab.steps) is None
+
+
+def test_no_soft_failures_means_no_report(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.steps import soft_failure_report, step
+
+    lab, _ = fake
+    with step("fine", continue_on_failure=True):
+        pass
+    assert soft_failure_report(lab.steps) is None
+
+
+def test_vlan_test_reports_every_bad_port_in_one_run(pytester) -> None:  # type: ignore[no-untyped-def]
+    """Two ports wrong: one failing test whose report lists both, and the good ports passed."""
+    result = _run_lab_suite(
+        pytester, False, "-k", "vlan_membership", bad_ports={"p3": 10, "p4": 10}
+    )
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(
+        [
+            "*INTENT VIOLATED: 2 checks failed: sw1:p3 must be access VLAN 20;"
+            " sw1:p4 must be trunk VLAN 10,20*",
+            "*Steps:*",
+            "*3. Check sw1:p1 is access VLAN 10 [ok*",
+            "*4. Check sw1:p2 is access VLAN 10 [ok*",
+            "*5. Check sw1:p3 is access VLAN 20 [[]FAILED, continued, *] - actual: access VLAN 10*",
+            "*6. Check sw1:p4 is trunk VLAN 10,20 [[]FAILED, continued*] - actual: access VLAN 10",
+            "*7. Check sw1 has no bridge ports the intent does not list [ok*",
+            "*Expected: all 5 checks pass*",
+            "*Actual:   2 of 5 failed (steps 5, 6)*",
+            "*Intent vs live:*",
+            "*sw1:p3: expected 'access VLAN 20', actual 'access VLAN 10'*drift*",
+            "*sw1:p4: expected 'trunk VLAN 10,20', actual 'access VLAN 10'*drift*",
+        ]
+    )
+
+
+def test_vlan_test_reports_a_bridge_port_the_intent_does_not_list(pytester) -> None:  # type: ignore[no-untyped-def]
+    """Someone plugs an unplanned port into sw1's VLAN 10: the intended ports still pass,
+    the extra-port step fails and names it."""
+    result = _run_lab_suite(pytester, False, "-k", "vlan_membership", bad_ports={"eth9": 10})
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(
+        [
+            "*INTENT VIOLATED: sw1 must have no bridge ports outside the intent*",
+            "*6. Check sw1:p4 is trunk VLAN 10,20 [ok*",
+            "*7. Check sw1 has no bridge ports the intent does not list [[]FAILED, continued*"
+            "] - actual: also eth9",
+            "*Expected: only p1, p2, p3, p4*",
+            "*sw1:eth9: expected 'absent', actual 'access VLAN 10'  (not in the intent)*drift*",
+        ]
+    )
+
+
+def test_parser_keeps_unmapped_bridge_ports_under_their_real_name() -> None:
+    from netcheck.backends.local import parse_bridge_vlans
+
+    data = [
+        {"ifname": "br0", "vlans": [{"vlan": 1, "flags": ["PVID", "Egress Untagged"]}]},
+        {"ifname": "eth1", "vlans": [{"vlan": 10, "flags": ["PVID", "Egress Untagged"]}]},
+        {"ifname": "eth9", "vlans": [{"vlan": 10, "flags": ["PVID", "Egress Untagged"]}]},
+    ]
+    out = parse_bridge_vlans(data, {"eth1": "p1"})
+    assert sorted(out) == ["eth9", "p1"]  # br0 is the bridge itself, not a port
+    assert out["eth9"] == PortVlans("access", (10,))
+
+
+def test_vlan_membership_reports_an_intended_port_missing_from_the_bridge() -> None:
+    from netcheck.assertions import check_vlan_membership
+
+    expected = {"p1": {"mode": "access", "vlans": [10]}, "p2": {"mode": "access", "vlans": [10]}}
+    with pytest.raises(IntentViolation) as exc:
+        check_vlan_membership("sw1", expected, {"p1": PortVlans("access", (10,))})
+    (drift,) = exc.value.report.drift
+    assert (drift.where, drift.actual, drift.note) == ("sw1:p2", "absent", "not on the bridge")

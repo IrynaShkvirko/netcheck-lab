@@ -41,10 +41,16 @@ def test_every_intended_port_is_up(lab: Lab) -> None:
 
 
 def test_routers_run_ospf(lab: Lab) -> None:
-    """Every router has at least one interface in the intended OSPF area."""
+    """Every router has at least one interface in the intended OSPF area.
+
+    One soft step per router, so a run reports every router without OSPF, not just the first.
+    """
     area = lab.intent.ospf.area
     for router in lab.by_role("router"):
-        with step(f"Read {router.name}'s OSPF interfaces and look for area {area}"):
+        with step(
+            f"Read {router.name}'s OSPF interfaces and look for area {area}",
+            continue_on_failure=True,
+        ):
             interfaces = router.ospf.interface_settings()
             in_area = [name for name, s in interfaces.items() if same_area(s.area, area)]
             assert in_area, f"{router.name} has no interface in OSPF area {area}"

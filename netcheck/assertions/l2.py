@@ -43,7 +43,8 @@ def host_attachment(intent: Intent, host: str) -> tuple[str, str, int | None]:
     return "", "", None
 
 
-def _describe(mode: str, vlans: list[int] | tuple[int, ...]) -> str:
+def describe_vlans(mode: str, vlans: list[int] | tuple[int, ...]) -> str:
+    """'access VLAN 10', 'trunk VLAN 10,20', 'none, no VLAN'."""
     if mode == "none" or not vlans:
         return f"{mode}, no VLAN"
     return f"{mode} VLAN {','.join(map(str, vlans))}"
@@ -59,10 +60,16 @@ def vlan_diff(
     lines = []
     for port in ports:
         exp, got = expected.get(port), live.get(port)
-        exp_s = _describe(exp["mode"], exp["vlans"]) if exp else "absent"
-        got_s = _describe(got.mode, got.vlans) if got else "absent"
-        lines.append(DiffLine(f"{switch}:{port}", exp_s, got_s))
+        exp_s = describe_vlans(exp["mode"], exp["vlans"]) if exp else "absent"
+        got_s = describe_vlans(got.mode, got.vlans) if got else "absent"
+        note = "not in the intent" if not exp and got else "not on the bridge" if not got else ""
+        lines.append(DiffLine(f"{switch}:{port}", exp_s, got_s, note))
     return lines
+
+
+def extra_ports(expected: Mapping[str, Any], live: Mapping[str, PortVlans]) -> list[str]:
+    """Live bridge ports the intent does not list."""
+    return sorted(set(live) - set(expected))
 
 
 def vlan_ports(live: Mapping[str, PortVlans]) -> list[str]:
@@ -182,19 +189,53 @@ def assert_isolated(a: Device, b: Device) -> PingResult:
 def check_vlan_membership(
     switch: str, expected: Mapping[str, Mapping[str, Any]], live: Mapping[str, PortVlans]
 ) -> None:
-    """Live membership equals the intent: every intended port matches, and no live port is extra."""
+    """Every port in `expected` has exactly the intended mode and VLANs, and the switch has
+    no bridge port the intent does not list."""
     ports = sorted(set(expected) | set(live))
     bad = [d for d in vlan_diff(switch, expected, live, ports) if d.expected != d.actual]
-    for line in bad:
-        port = line.where.removeprefix(f"{switch}:")
-        if port not in expected:
-            line.note = "not in the intent"
     if bad:
         report = FailureReport(
             verdict=f"{switch} VLAN membership must match the intent",
             expected="all ports as in intent",
             actual=f"{len(bad)} port(s) differ",
             drift=bad,
+        )
+        report.add_evidence(f"{switch} VLAN membership", vlan_ports(live))
+        fail(report)
+
+
+def check_port_vlans(
+    switch: str,
+    port: str,
+    expected: Mapping[str, Mapping[str, Any]],
+    live: Mapping[str, PortVlans],
+) -> None:
+    """One switch port has exactly the intended mode and VLANs. Made for one soft step
+    per port, so a run lists every port that differs."""
+    (line,) = vlan_diff(switch, expected, live, [port])
+    if line.expected != line.actual:
+        report = FailureReport(
+            verdict=f"{switch}:{port} must be {line.expected}",
+            expected=line.expected,
+            actual=line.actual,
+            drift=[line],
+        )
+        report.add_evidence(f"{switch} VLAN membership", vlan_ports(live))
+        fail(report)
+
+
+def check_no_extra_ports(
+    switch: str, expected: Mapping[str, Mapping[str, Any]], live: Mapping[str, PortVlans]
+) -> None:
+    """The switch has no bridge port the intent does not list (an unplanned port could
+    carry a VLAN somewhere it must not reach)."""
+    extra = extra_ports(expected, live)
+    if extra:
+        report = FailureReport(
+            verdict=f"{switch} must have no bridge ports outside the intent",
+            expected=f"only {', '.join(sorted(expected))}",
+            actual=f"also {', '.join(extra)}",
+            drift=vlan_diff(switch, expected, live, extra),
         )
         report.add_evidence(f"{switch} VLAN membership", vlan_ports(live))
         fail(report)

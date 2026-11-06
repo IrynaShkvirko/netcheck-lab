@@ -82,13 +82,15 @@ def frr_config(intent: Intent, router: str, prefix: str = "eth") -> str:
 
 # ---- Linux switch and hosts (executed by containerlab after start) ------
 
+BRIDGE = "br0"  # the VLAN-aware bridge on Linux switches; not a port itself
+
 
 def switch_exec(intent: Intent, switch: str, prefix: str = "eth") -> list[str]:
-    cmds = ["ip link add br0 type bridge vlan_filtering 1", "ip link set br0 up"]
+    cmds = [f"ip link add {BRIDGE} type bridge vlan_filtering 1", f"ip link set {BRIDGE} up"]
     for lk in intent.links_of(switch):
         ifname = port_name(lk.endpoint(switch).port, prefix)
         cmds += [
-            f"ip link set {ifname} master br0",
+            f"ip link set {ifname} master {BRIDGE}",
             f"ip link set {ifname} up",
             f"bridge vlan del dev {ifname} vid 1",
         ]

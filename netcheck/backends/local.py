@@ -28,7 +28,7 @@ from netcheck.capabilities import (
 )
 from netcheck.device import Device
 from netcheck.devicelog import DeviceLog
-from netcheck.render import port_name, render
+from netcheck.render import BRIDGE, port_name, render
 from netcheck.transport.base import CommandResult, TransportError
 from netcheck.transport.docker_exec import DockerExecTransport
 
@@ -72,24 +72,31 @@ def parse_frr_routes(data: dict[str, Any]) -> dict[str, Route]:
 
 
 def parse_bridge_vlans(
-    data: list[dict[str, Any]], to_logical: dict[str, str]
+    data: list[dict[str, Any]], to_logical: dict[str, str], bridges: tuple[str, ...] = (BRIDGE,)
 ) -> dict[str, PortVlans]:
+    """`bridge -j vlan show` -> {port: PortVlans}.
+
+    Ports the intent maps get their logical name (eth3 -> p3). A bridge port the intent
+    does not know is kept under its real name (eth9), so drift checks can report it.
+    The bridge device itself (br0) is not a port and is skipped.
+    """
     out = {}
     for entry in data or []:
         ifname = entry.get("ifname", "")
-        if ifname not in to_logical:
-            continue  # br0 itself and unmapped ports
+        if not ifname or ifname in bridges:
+            continue
+        port = to_logical.get(ifname, ifname)
         vlans = entry.get("vlans", [])
         vids = tuple(sorted(int(v["vlan"]) for v in vlans))
         if not vids:
-            out[to_logical[ifname]] = PortVlans("none", ())
+            out[port] = PortVlans("none", ())
             continue
         access = (
             len(vlans) == 1
             and "PVID" in vlans[0].get("flags", [])
             and "Egress Untagged" in vlans[0].get("flags", [])
         )
-        out[to_logical[ifname]] = PortVlans("access" if access else "trunk", vids)
+        out[port] = PortVlans("access" if access else "trunk", vids)
     return dict(sorted(out.items()))
 
 
@@ -509,8 +516,11 @@ class LocalBackend(Backend):
                 assert isinstance(shell, LinuxShell)
                 data["host_routes"][name] = shell.route_table()
             if dev.has(Bridge):
+                # intended ports only: restore puts those back; an extra port is drift to report
                 data["bridge"][name] = {
-                    p: [pv.mode, list(pv.vlans)] for p, pv in dev.bridge.vlan_membership().items()
+                    p: [pv.mode, list(pv.vlans)]
+                    for p, pv in dev.bridge.vlan_membership().items()
+                    if p in dev.port_map
                 }
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         (self.snapshot_dir / f"{snap_id}.json").write_text(json.dumps(data, indent=2))
@@ -539,6 +549,8 @@ class LocalBackend(Backend):
         for name, ports in data["bridge"].items():
             live = devs[name].bridge.vlan_membership()
             for port, (mode, vlans) in ports.items():
+                if port not in devs[name].port_map:
+                    continue  # snapshots from before extra ports were reported
                 cur = live.get(port)
                 if cur and cur.mode == mode and list(cur.vlans) == vlans:
                     continue

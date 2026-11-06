@@ -1,4 +1,7 @@
 BACKEND ?= local
+# One virtualenv per OS: the Mac and the Linux VM share this folder, and a single .venv
+# would be overwritten by whichever side ran uv last (.venv-darwin / .venv-linux).
+export UV_PROJECT_ENVIRONMENT ?= .venv-$(shell uname -s | tr A-Z a-z)
 NETCHECK = uv run python -m netcheck --backend $(BACKEND)
 PYTEST   = uv run pytest --backend $(BACKEND) --junitxml=artifacts/junit.xml
 CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)

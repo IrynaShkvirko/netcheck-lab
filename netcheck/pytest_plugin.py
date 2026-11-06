@@ -18,6 +18,7 @@ from netcheck.intent import expected_state, load_intent
 from netcheck.lab import Lab, set_current
 from netcheck.labstate import LabState
 from netcheck.report import IntentViolation
+from netcheck.steps import soft_failure_report
 from netcheck.timing import Measurement, Timing
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -144,9 +145,16 @@ def _isolate(request: pytest.FixtureRequest) -> Generator[None, None, None]:
 @pytest.hookimpl(wrapper=True)
 def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> Generator[None, object, object]:
     try:
-        return (yield)
+        result = yield
     except CapabilityMissing as exc:
         pytest.skip(str(exc))
+    # the test body ended normally: fail it now if any soft step failed along the way
+    the_lab = pyfuncitem.config.stash.get(LAB_KEY, None)
+    if the_lab is not None and STATE_KEY in pyfuncitem.stash:
+        combined = soft_failure_report(the_lab.steps)
+        if combined is not None:
+            raise IntentViolation(combined)
+    return result
 
 
 @pytest.hookimpl(wrapper=True)

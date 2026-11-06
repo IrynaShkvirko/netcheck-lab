@@ -7,6 +7,7 @@ from netcheck.assertions import (
     assert_ospf_neighbor_full,
     assert_ospf_routes_match_intent,
     assert_route_present,
+    check_vlan_membership,
 )
 from netcheck.capabilities import OspfNeighbor, PortVlans, Route
 from netcheck.report import FailureReport, IntentViolation
@@ -19,6 +20,21 @@ def test_isolation_passes_and_cleans_up(fake) -> None:  # type: ignore[no-untype
     assert len(lab.cleanup) >= 2  # on-link routes registered for undo
     lab.cleanup.run()
     assert lab["h1"].shell.routes == []  # type: ignore[attr-defined]
+
+
+def test_vlan_membership_rejects_a_port_the_intent_omits() -> None:
+    """A live port with no intent entry is drift, the same way an extra OSPF route is."""
+    expected = {"p1": {"mode": "access", "vlans": [10]}}
+    live = {"p1": PortVlans("access", (10,)), "p9": PortVlans("access", (10,))}
+    with pytest.raises(IntentViolation) as exc:
+        check_vlan_membership("sw1", expected, live)
+    (drift,) = exc.value.report.drift
+    assert (drift.where, drift.expected, drift.actual, drift.note) == (
+        "sw1:p9",
+        "absent",
+        "access VLAN 10",
+        "not in the intent",
+    )
 
 
 def test_wrong_vlan_report_points_at_the_drifted_port(fake) -> None:  # type: ignore[no-untyped-def]
