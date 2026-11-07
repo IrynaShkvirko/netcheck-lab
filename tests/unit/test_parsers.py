@@ -6,8 +6,9 @@ from netcheck.backends.local import (
     parse_frr_routes,
     parse_ping,
 )
+from netcheck.ports import PortMap
 
-PORTS = {"eth2": "p2", "eth3": "p3", "eth1": "p1", "eth4": "p4"}
+PORTS = PortMap({"p2": "eth2", "p3": "eth3", "p1": "eth1", "p4": "eth4"})
 
 
 def test_frr_neighbors_both_key_styles() -> None:

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
 from netcheck.backends.base import Backend
 from netcheck.backends.local import parse_frr_interfaces
 from netcheck.capabilities import (
@@ -22,9 +23,9 @@ from netcheck.capabilities import (
     Snapshot,
 )
 from netcheck.device import Device
-from netcheck.devicelog import DeviceLog
 from netcheck.intent import Intent, expected_state
 from netcheck.lab import Lab
+from netcheck.ports import PortMap
 from netcheck.timing import Threshold, Timing
 
 
@@ -48,7 +49,9 @@ class FakeOspf(Ospf):
     def interface_settings(self) -> dict[str, OspfInterface]:
         """Parsed from `config` (FRR format, ethN = pN) with the backend's own parser,
         then any set_interface_area overrides applied."""
-        settings = parse_frr_interfaces(self.config, {f"eth{i}": f"p{i}" for i in range(1, 10)})
+        settings = parse_frr_interfaces(
+            self.config, PortMap({f"p{i}": f"eth{i}" for i in range(1, 10)})
+        )
         for port, area in self.area_overrides.items():
             current = settings.get(port, OspfInterface(port))
             settings[port] = replace(current, area=None if area is None else str(area))
@@ -229,6 +232,37 @@ def fast_timing() -> Timing:
     return Timing(profile="unit", thresholds=th)
 
 
+class FakeFactory(CapabilityFactory):
+    """The fakes, handed out through the real assembly. Routers get a FakeOspf, the
+    switch the shared FakeBridge, hosts a FakeShell; each one is kept in `parts`."""
+
+    def __init__(self, world: FakeWorld, parts: dict[str, Any]) -> None:
+        self.world, self.parts = world, parts
+
+    def links(self, spec: DeviceSpec) -> Links:
+        return FakeLinks()
+
+    def ospf(self, spec: DeviceSpec) -> Ospf:
+        o = FakeOspf()
+        self.parts[f"ospf_{spec.name}"] = o
+        return o
+
+    def bridge(self, spec: DeviceSpec) -> Bridge:
+        return self.world.bridge
+
+    def shell(self, spec: DeviceSpec) -> Shell | None:
+        return FakeShell(spec.name, self.world) if spec.role == "host" else None
+
+    def snapshot(self, spec: DeviceSpec, built: dict[type, object]) -> Snapshot:
+        snap = FakeSnapshot(
+            cast(FakeLinks, built[Links]),
+            cast(FakeBridge, built.get(Bridge)),
+            cast(FakeOspf, built.get(Ospf)),
+        )
+        self.parts[f"snapshot_{spec.name}"] = snap
+        return snap
+
+
 def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
     expected = expected_state(intent)
     sw_ports = {
@@ -237,30 +271,8 @@ def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
     }
     bridge = FakeBridge(sw_ports)
     world = FakeWorld(intent, bridge)
-    devices: dict[str, Device] = {}
     parts: dict[str, Any] = {"bridge": bridge}
-    for name, n in intent.nodes.items():
-        links = FakeLinks()
-        caps: dict[type, object] = {Links: links}
-        o = None
-        if n.role == "router":
-            o = FakeOspf()
-            caps[Ospf] = o
-            parts[f"ospf_{name}"] = o
-        if n.role == "switch":
-            caps[Bridge] = bridge
-        if n.role == "host":
-            caps[Shell] = FakeShell(name, world)
-        snap = FakeSnapshot(links, bridge if n.role == "switch" else None, o)
-        caps[Snapshot] = snap
-        parts[f"snapshot_{name}"] = snap
-        ports = {
-            ep.port: f"eth{ep.port[1:]}"
-            for lk in intent.links_of(name)
-            for ep in (lk.a, lk.b)
-            if ep.node == name
-        }
-        devices[name] = Device(name, n.role, "fake", DeviceLog(name), caps, ports)
+    devices = assemble(intent, "fake", "eth", FakeFactory(world, parts))
     lab = Lab(
         intent=intent,
         expected=expected,

@@ -22,6 +22,7 @@ from netcheck.backends.nvidia_air import (
 )
 from netcheck.capabilities import OspfNeighbor, PortVlans, Route
 from netcheck.intent import Intent, expected_state
+from netcheck.ports import PortMap
 from netcheck.render import frr_config
 from netcheck.transport.base import TransportError
 
@@ -47,9 +48,7 @@ def test_ospf_interface_settings_match_the_frr_config_of_the_same_intent(intent)
     for router in ("r1", "r2"):
         ospf, _ = _ospf(intent, router)
         ports = nvue_ports(intent, router)
-        from_frr = parse_frr_interfaces(
-            frr_config(intent, router, "swp"), {v: k for k, v in ports.items()}
-        )
+        from_frr = parse_frr_interfaces(frr_config(intent, router, "swp"), ports)
         assert ospf.interface_settings() == from_frr, router
 
 
@@ -100,7 +99,9 @@ def test_bridge_port_defaults_and_unplanned_ports() -> None:
         "swp7": {"link": {}},  # not in the bridge
     }
     out = parse_nvue_bridge(
-        interfaces, {"vlan": {"10": {}, "20": {}}}, {"swp4": "p4", "swp5": "p5", "swp6": "p6"}
+        interfaces,
+        {"vlan": {"10": {}, "20": {}}},
+        PortMap({"p4": "swp4", "p5": "swp5", "p6": "swp6"}),
     )
     assert out == {
         "p4": PortVlans("trunk", (10, 20)),
@@ -126,10 +127,13 @@ def test_link_states_read_every_port_in_one_call(intent) -> None:  # type: ignor
 @pytest.mark.parametrize(
     ("parser", "body"),
     [
-        (lambda b: parse_nvue_neighbors(b, {}), ["not", "a", "dict"]),
-        (lambda b: parse_nvue_neighbors(b, {}), {"2.2.2.2": {"interface": {"swp2": {}}}}),
+        (lambda b: parse_nvue_neighbors(b, PortMap()), ["not", "a", "dict"]),
+        (lambda b: parse_nvue_neighbors(b, PortMap()), {"2.2.2.2": {"interface": {"swp2": {}}}}),
         (parse_nvue_routes, {"10.0.30.0/24": {"distance": 110, "nexthop-group-id": 7}}),
-        (lambda b: parse_nvue_bridge(b, {}, {}), {"swp1": {"bridge": {"domain": "br_default"}}}),
+        (
+            lambda b: parse_nvue_bridge(b, {}, PortMap()),
+            {"swp1": {"bridge": {"domain": "br_default"}}},
+        ),
     ],
     ids=["neighbors-list", "neighbor-without-local-ip", "routes-5.11-shape", "bridge-domain-str"],
 )
@@ -222,8 +226,9 @@ def lab(tmp_path_factory):
 
 
 def test_lab_tests_pass_unchanged_on_nvue_responses(pytester) -> None:  # type: ignore[no-untyped-def]
-    """The point of the capability layer: smoke, OSPF and drift tests from tests/lab
-    run as they are, with routers and the switch answering in NVUE JSON."""
+    """The point of the capability layer: every test from tests/lab runs as it is, with
+    routers and the switch answering in NVUE JSON. Tests that need a host shell, which
+    the NVIDIA backend does not have yet, are skipped with the reason."""
     repo = Path(__file__).resolve().parents[2]
     lab_dir = repo / "tests" / "lab"
     pytester.makeconftest(
@@ -237,7 +242,8 @@ def test_lab_tests_pass_unchanged_on_nvue_responses(pytester) -> None:  # type: 
         "netcheck.pytest_plugin",
         "--intent",
         str(repo / "intent/lab.yaml"),
-        "-k",
-        "smoke or ospf or drift",
+        "-rs",
     )
-    result.assert_outcomes(passed=10)
+    # hosts have no capabilities on NVIDIA yet: their tests skip, they do not error
+    result.assert_outcomes(passed=10, skipped=6)
+    result.stdout.fnmatch_lines(["*SKIPPED*h1 on backend 'nvidia' has no Shell capability*"])

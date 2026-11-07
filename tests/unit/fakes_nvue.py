@@ -5,15 +5,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from netcheck.backends.nvidia_air import PATHS, NvueBridge, NvueLinks, NvueOspf
-from netcheck.capabilities import Bridge, Links, Ospf
-from netcheck.device import Device
-from netcheck.devicelog import DeviceLog
+from netcheck.assembly import DeviceSpec, assemble
+from netcheck.backends.nvidia_air import PATHS, NvueFactory
 from netcheck.intent import Intent
 from netcheck.lab import Lab
+from netcheck.ports import PortMap
 from netcheck.transport.base import ApiResult
+from netcheck.transport.nvue_rest import NvueRestTransport
 
 SAMPLES = Path(__file__).parent / "fixtures" / "nvue"
 _NAMES = {path: name for name, path in PATHS.items()}
@@ -67,29 +67,21 @@ class FakeNvueTransport:
         return ApiResult("GET", path, 200, body)
 
 
-def nvue_ports(intent: Intent, node: str) -> dict[str, str]:
-    return {
-        ep.port: f"swp{ep.port[1:]}"
-        for lk in intent.links_of(node)
-        for ep in (lk.a, lk.b)
-        if ep.node == node
-    }
+def nvue_ports(intent: Intent, node: str) -> PortMap:
+    return PortMap.for_node(intent, node, "swp")
 
 
 def use_nvue_devices(lab: Lab) -> dict[str, FakeNvueTransport]:
-    """Swap the fake routers and switches of a fake lab for NVUE capabilities over
-    FakeNvueTransport (hosts stay fake shells). Returns the transports by device."""
-    transports = {}
-    for name, node in lab.intent.nodes.items():
-        if node.role == "host":
-            continue
-        t = FakeNvueTransport(name)
-        ports = nvue_ports(lab.intent, name)
-        caps: dict[type, object] = {Links: NvueLinks(t, ports)}  # type: ignore[arg-type]
-        if node.role == "router":
-            caps[Ospf] = NvueOspf(t, ports)  # type: ignore[arg-type]
-        else:
-            caps[Bridge] = NvueBridge(t, ports)  # type: ignore[arg-type]
-        lab.devices[name] = Device(name, node.role, "nvidia", DeviceLog(name), caps, ports)
-        transports[name] = t
+    """Rebuild the fake lab's devices with the real NVIDIA factory over FakeNvueTransport,
+    as NvidiaAirBackend would: routers and the switch answer in NVUE JSON, hosts have no
+    capabilities. Returns the transports by device."""
+    transports: dict[str, FakeNvueTransport] = {}
+
+    def open_transport(spec: DeviceSpec) -> NvueRestTransport:
+        transports[spec.name] = FakeNvueTransport(spec.name)
+        return cast(NvueRestTransport, transports[spec.name])
+
+    devices = assemble(lab.intent, "nvidia", "swp", NvueFactory(open_transport))
+    lab.devices.clear()
+    lab.devices.update(devices)  # the backend and the lab share this dict
     return transports

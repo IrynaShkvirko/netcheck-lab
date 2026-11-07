@@ -13,9 +13,10 @@ import pytest
 
 from netcheck.backends.local import FrrOspf, LinuxBridge, LinuxLinks, LinuxShell, LocalSnapshot
 from netcheck.devicelog import DeviceLog
+from netcheck.ports import PortMap
 from netcheck.transport.base import CommandResult, TransportError
 
-PORTS = {"p1": "eth1", "p2": "eth2", "p3": "eth3", "p4": "eth4"}
+PORTS = PortMap({"p1": "eth1", "p2": "eth2", "p3": "eth3", "p4": "eth4"})
 
 R1 = """Building configuration...
 !
@@ -163,8 +164,8 @@ def test_host_routes_left_by_a_test_are_removed_and_default_restored() -> None:
     )
     snap = LocalSnapshot(
         "h1",
-        LinuxLinks(t, {"p1": "eth1"}),  # type: ignore[arg-type]
-        host=LinuxShell(t, {"p1": "eth1"}, "h1"),  # type: ignore[arg-type]
+        LinuxLinks(t, PortMap({"p1": "eth1"})),  # type: ignore[arg-type]
+        host=LinuxShell(t, PortMap({"p1": "eth1"}), "h1"),  # type: ignore[arg-type]
     )
     state = snap.take()
     snap.restore_to(state)

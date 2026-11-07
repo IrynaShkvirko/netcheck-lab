@@ -66,3 +66,21 @@ which broke the rule above and would have made every diagnosis empty on the NVID
 - `Links.link_states(ports)` reads every port of a device in one call.
 - A unit test fails if NOS syntax (`vtysh`, `running_config`, `ip ospf area`) appears in
   `netcheck/assertions/`.
+
+## Revision (2026-11-07, architecture review)
+
+Each backend and each test fake built its devices on its own: four copies of the logical
+port mapping, two identical pairs of name-translation helpers, and four role switches that
+disagreed. The NVIDIA backend left hosts out entirely, so `lab["h1"]` raised a KeyError
+instead of the CapabilityMissing skip this ADR promises.
+
+- **One assembly** (`netcheck.assembly`): a single table says which capabilities each role
+  may have (router: Links, Ospf, Snapshot; switch: Links, Bridge, Shell, Snapshot; host:
+  Links, Shell, Snapshot). A backend supplies its port prefix and a `CapabilityFactory`
+  with one method per capability, returning None for what it cannot provide.
+- **Every intent node is a Device** on every backend, also one with no capabilities, so a
+  missing capability is always a skip with the backend name in the reason.
+- **`PortMap`** (`netcheck.ports`) is the one place that translates logical ports to real
+  names and back, VLAN sub-interfaces included. Adapters and parsers take it.
+- The test fakes use the same assembly; the NVUE lab test uses the real NVIDIA factory over
+  a fake transport, and checks that host tests are skipped.

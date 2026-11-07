@@ -9,6 +9,7 @@ from netcheck.backends.local import LinuxShell
 from netcheck.capabilities import PingResult, PortVlans, Route
 from netcheck.convergence import measure_reconvergence
 from netcheck.devicelog import DeviceLog
+from netcheck.ports import PortMap
 from netcheck.report import IntentViolation
 from netcheck.transport.base import CommandResult, TransportError
 
@@ -335,7 +336,7 @@ def test_link_states_reads_all_ports_in_one_call() -> None:
 def test_bridge_port_without_vlans_is_none_not_trunk() -> None:
     from netcheck.backends.local import parse_bridge_vlans
 
-    out = parse_bridge_vlans([{"ifname": "eth3", "vlans": []}], {"eth3": "p3"})
+    out = parse_bridge_vlans([{"ifname": "eth3", "vlans": []}], PortMap({"p3": "eth3"}))
     assert (out["p3"].mode, out["p3"].vlans) == ("none", ())
 
 
@@ -575,7 +576,7 @@ def test_parser_keeps_unmapped_bridge_ports_under_their_real_name() -> None:
         {"ifname": "eth1", "vlans": [{"vlan": 10, "flags": ["PVID", "Egress Untagged"]}]},
         {"ifname": "eth9", "vlans": [{"vlan": 10, "flags": ["PVID", "Egress Untagged"]}]},
     ]
-    out = parse_bridge_vlans(data, {"eth1": "p1"})
+    out = parse_bridge_vlans(data, PortMap({"p1": "eth1"}))
     assert sorted(out) == ["eth9", "p1"]  # br0 is the bridge itself, not a port
     assert out["eth9"] == PortVlans("access", (10,))
 

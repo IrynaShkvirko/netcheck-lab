@@ -8,6 +8,14 @@ Tests that a lab network behaves as its intent says, on more than one backend.
 The description of what the network must do (`intent/lab.yaml`), and the single source of truth for topology, configuration and expected state. Identified by its digest.
 _Avoid_: spec, topology file
 
+**Logical port**:
+A device port as the intent names it (`p1`, `p2`; `p1.10` for a VLAN sub-interface), independent of any NOS. Each backend maps it to a real interface name.
+_Avoid_: interface name, ifname (those are the real, backend-specific names)
+
+**Capability**:
+Something a device can do for a test (OSPF, bridge, links, shell, snapshot), the same on every backend. A device lacking one makes tests that need it skip, not fail.
+_Avoid_: feature, driver
+
 **Snapshot**:
 The saved configuration and link state of every device in the lab, tied to the intent it was taken from. Only restorable onto a lab built from that same intent.
 _Avoid_: checkpoint, backup
