@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import NoReturn, TypeVar
 
-from netcheck.capabilities import CaptureHandle
+from netcheck.capabilities import CaptureHandle, OspfNeighbor
 from netcheck.device import Device
 from netcheck.lab import Lab
 from netcheck.report import FailureReport, IntentViolation
@@ -40,8 +40,13 @@ def evidence(report: FailureReport, title: str, fn: Callable[[], list[str]]) -> 
         report.add_evidence(title, lines or ["(none)"])
 
 
+def neighbor_line(n: OspfNeighbor) -> str:
+    """One OSPF neighbor as an evidence line ('2.2.2.2 Full via p2')."""
+    return f"{n.router_id} {n.state} via {n.port}"
+
+
 def ospf_neighbor_lines(device: Device) -> list[str]:
-    return [f"{n.router_id} {n.state} via {n.port}" for n in device.ospf.neighbors()]
+    return [neighbor_line(n) for n in device.ospf.neighbors()]
 
 
 def arp_line(entry: Mapping[str, object]) -> str:
