@@ -5,10 +5,11 @@ from __future__ import annotations
 import contextvars
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from netcheck.cleanup import CleanupRegistry
 from netcheck.device import Device
+from netcheck.expected import Expected
 from netcheck.intent import Intent
 from netcheck.testrun import TestRun
 from netcheck.timing import Timing
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 @dataclass
 class Lab:
     intent: Intent
-    expected: dict[str, Any]
+    expected: Expected
     backend: Backend
     devices: dict[str, Device]
     timing: Timing

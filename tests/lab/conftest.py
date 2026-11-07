@@ -7,35 +7,31 @@ from collections.abc import Callable
 import pytest
 
 from netcheck.device import Device
-from netcheck.intent import expected_state, load_intent
+from netcheck.expected import Expected
+from netcheck.intent import load_intent
 from netcheck.lab import Lab
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     intent = load_intent(metafunc.config.getoption("--intent"))
-    expected = expected_state(intent)
+    expected = Expected(intent)
     if "isolated_pair" in metafunc.fixturenames:
-        pairs = expected["isolated"]
+        pairs = expected.isolated_pairs()
         metafunc.parametrize("isolated_pair", pairs, ids=[f"{a}-{b}" for a, b in pairs])
     if "reachable_pair" in metafunc.fixturenames:
-        pairs = expected["reachable"]
+        pairs = expected.reachable_pairs()
         metafunc.parametrize("reachable_pair", pairs, ids=[f"{a}-{b}" for a, b in pairs])
     if "ospf_adjacency" in metafunc.fixturenames:
         # one case per adjacency: two links between the same routers are two cases
-        adj = [
-            (r, n["neighbor"], n["local_port"], n["link"])
-            for r, ns in expected["ospf_neighbors"].items()
-            for n in ns
-        ]
+        adj = expected.adjacencies()
         metafunc.parametrize(
-            "ospf_adjacency", adj, ids=[f"{r}-{nb}-{link}" for r, nb, _, link in adj]
+            "ospf_adjacency", adj, ids=[f"{a.router}-{a.neighbor}-{a.link}" for a in adj]
         )
     if "ospf_route" in metafunc.fixturenames:
-        routes = [(r, p) for r, ps in expected["routes"].items() for p in ps]
+        routes = [(r, p) for r in expected.routers() for p in sorted(expected.routes(r))]
         metafunc.parametrize("ospf_route", routes, ids=[f"{r}-{p}" for r, p in routes])
     if "switch_name" in metafunc.fixturenames:
-        switches = sorted(expected["vlan_membership"])
-        metafunc.parametrize("switch_name", switches)
+        metafunc.parametrize("switch_name", expected.switches())
 
 
 @pytest.fixture

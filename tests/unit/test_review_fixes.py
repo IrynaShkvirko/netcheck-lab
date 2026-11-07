@@ -584,7 +584,7 @@ def test_parser_keeps_unmapped_bridge_ports_under_their_real_name() -> None:
 def test_vlan_membership_reports_an_intended_port_missing_from_the_bridge() -> None:
     from netcheck.assertions import check_vlan_membership
 
-    expected = {"p1": {"mode": "access", "vlans": [10]}, "p2": {"mode": "access", "vlans": [10]}}
+    expected = {"p1": PortVlans("access", (10,)), "p2": PortVlans("access", (10,))}
     with pytest.raises(IntentViolation) as exc:
         check_vlan_membership("sw1", expected, {"p1": PortVlans("access", (10,))})
     (drift,) = exc.value.report.drift

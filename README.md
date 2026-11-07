@@ -322,7 +322,8 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
 
 | Path | What |
 | --- | --- |
-| `netcheck/intent.py` | intent model, validation, expected state |
+| `netcheck/intent.py` | intent model and validation |
+| `netcheck/expected.py` | expected state derived from the intent, in the capability types; writes `expected_state.json` |
 | `netcheck/render.py` | Containerlab topology, FRR config, switch and host setup |
 | `netcheck/device.py`, `capabilities.py` | composition: devices hold capabilities |
 | `netcheck/transport/` | `docker exec` and NVUE REST transports, each logging every call |

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Collection, Mapping
 from functools import partial
 
 from netcheck.assertions.common import attempt, evidence, fail, ospf_neighbor_lines
 from netcheck.capabilities import OspfInterface, OspfNeighbor, Route
 from netcheck.device import Device
-from netcheck.intent import ospf_prefixes
 from netcheck.lab import Lab, current
 from netcheck.report import DiffLine, FailureReport
 from netcheck.timing import WaitTimeout
@@ -26,52 +26,33 @@ def same_area(live: str | None, wanted: int) -> bool:
         return live.isdigit() and int(live) == wanted
 
 
-def _network(ip: str) -> str:
-    return str(ipaddress.ip_interface(ip).network)
-
-
 def interface_drift(lab: Lab, router: Device, prefix: str) -> list[DiffLine]:
-    """Is the interface that should advertise `prefix` on `router` in OSPF?"""
+    """Is each interface that should advertise `prefix` on `router` in OSPF?"""
     settings = router.ospf.interface_settings()
     area = lab.intent.ospf.area
     drift = []
-    for lk in lab.intent.links_of(router.name):
-        ep = lk.endpoint(router.name)
-        if ep.ip and _network(ep.ip) == prefix:
-            s = settings.get(ep.port)
-            real = router.port_map.get(ep.port, ep.port)
+    for want in lab.expected.advertising_interfaces(router.name, prefix):
+        s = settings.get(want.name)
+        real = router.port_map.real(want.name)
+        in_area = f"OSPF area {s.area}" if s and s.area is not None else "not in OSPF"
+        if want.vlan is None:
             drift.append(
-                DiffLine(
-                    f"{router.name}:{ep.port} ({real})",
-                    f"OSPF area {area}",
-                    f"OSPF area {s.area}" if s and s.area is not None else "not in OSPF",
-                )
+                DiffLine(f"{router.name}:{want.name} ({real})", f"OSPF area {area}", in_area)
             )
-    for vid, vlan in lab.intent.vlans.items():
-        if vlan.gateway_node != router.name or not vlan.gateway_ip:
             continue
-        if _network(vlan.gateway_ip) != prefix:
-            continue
-        for lk in lab.intent.links_of(router.name):
-            if lk.mode == "trunk" and vid in lk.vlans:
-                port = lk.endpoint(router.name).port
-                name = f"{port}.{vid}"
-                s = settings.get(name)
-                real = f"{router.port_map.get(port, port)}.{vid}"
-                has_ip = bool(s and vlan.gateway_ip in s.addresses)
-                in_area = bool(s and same_area(s.area, area))
-                drift.append(
-                    DiffLine(
-                        f"{router.name}:{name} ({real}, VLAN {vid} gateway)",
-                        f"address {vlan.gateway_ip}, OSPF area {area}",
-                        ", ".join(
-                            [
-                                f"address {vlan.gateway_ip}" if has_ip else "no gateway address",
-                                f"OSPF area {area}" if in_area else "not in OSPF",
-                            ]
-                        ),
-                    )
-                )
+        has_ip = bool(s and want.address in s.addresses)
+        drift.append(
+            DiffLine(
+                f"{router.name}:{want.name} ({real}, VLAN {want.vlan} gateway)",
+                f"address {want.address}, OSPF area {area}",
+                ", ".join(
+                    [
+                        f"address {want.address}" if has_ip else "no gateway address",
+                        f"OSPF area {area}" if s and same_area(s.area, area) else "not in OSPF",
+                    ]
+                ),
+            )
+        )
     return drift
 
 
@@ -95,29 +76,14 @@ def port_drift(lab: Lab, router: Device, port: str, live: OspfInterface | None) 
     return drift
 
 
-def router_link_ports(lab: Lab, router: Device) -> list[str]:
-    """Ports of `router` on routed links to other routers (where adjacencies form)."""
-    routers = {r.name for r in lab.intent.by_role("router")}
-    return [
-        lk.endpoint(router.name).port
-        for lk in lab.intent.links_of(router.name)
-        if lk.routed and lk.peer(router.name).node in routers
-    ]
-
-
 def link_drift(lab: Lab, router: Device) -> list[DiffLine]:
     """OSPF settings on all links to other routers that differ from the intent."""
     settings = router.ospf.interface_settings()
     return [
         line
-        for port in router_link_ports(lab, router)
+        for port in lab.expected.router_link_ports(router.name)
         for line in port_drift(lab, router, port, settings.get(port))
     ]
-
-
-def _origin(lab: Lab, prefix: str, exclude: str = "") -> str:
-    owners = [r for r, ps in ospf_prefixes(lab.intent).items() if prefix in ps and r != exclude]
-    return owners[0] if owners else "?"
 
 
 def _diagnose(
@@ -133,7 +99,7 @@ def _diagnose(
             list[DiffLine](),
         )
         return f"{router}: no Full adjacency, so it learns nothing"
-    origin = _origin(lab, prefix, exclude=router)
+    origin = lab.expected.originator(prefix, exclude=router)
     if prefix not in lsdb:
         if origin in lab.devices:
             report.drift += attempt(
@@ -186,9 +152,7 @@ def assert_ospf_neighbor_full(r1: Device, r2: Device, port: str | None = None) -
                 "diagnosis",
                 [f"{r1.name} is Full with {r2.name} via {', '.join(others)}; only {port} is down"],
             )
-        for lk in lab.intent.links:
-            if {lk.a.node, lk.b.node} != {r1.name, r2.name}:
-                continue
+        for lk in lab.expected.links_between(r1.name, r2.name):
             ep = lk.endpoint(r1.name)
             if port is None or ep.port == port:
                 label = f" ({lk.label})" if lk.label else ""
@@ -213,7 +177,7 @@ def assert_route_present(router: Device, prefix: str) -> Route:
             "route_installed", lookup, lambda r: r is not None and r.installed
         )
     except WaitTimeout:
-        origin = _origin(lab, prefix, exclude=router.name)
+        origin = lab.expected.originator(prefix, exclude=router.name)
         report = FailureReport(
             verdict=f"{router.name} must learn {prefix} via OSPF from {origin}",
             expected=f"{prefix} installed in {router.name} routing table",
@@ -300,7 +264,7 @@ def assert_route_uses(router: Device, prefix: str, next_hop: str, why: str = "")
     return route
 
 
-def assert_ospf_routes_match_intent(expected: dict[str, list[str]] | None = None) -> None:
+def assert_ospf_routes_match_intent(expected: Mapping[str, Collection[str]] | None = None) -> None:
     """Every router has exactly the OSPF routes the intent expects: none missing,
     none unexpected.
 
@@ -310,7 +274,7 @@ def assert_ospf_routes_match_intent(expected: dict[str, list[str]] | None = None
     did not install.
     """
     lab = current()
-    wanted: dict[str, list[str]] = expected if expected is not None else lab.expected["routes"]
+    wanted = expected if expected is not None else lab.expected.routes_by_router()
 
     def drift() -> tuple[dict[str, list[str]], dict[str, list[str]]]:
         missing: dict[str, list[str]] = {}
@@ -336,8 +300,8 @@ def assert_ospf_routes_match_intent(expected: dict[str, list[str]] | None = None
 def _routes_drift_report(
     lab: Lab, missing: dict[str, list[str]], extra: dict[str, list[str]]
 ) -> FailureReport:
-    routers = sorted(lab.expected["routes"])
-    total = sum(len(ps) for ps in lab.expected["routes"].values())
+    routers = lab.expected.routers()
+    total = sum(len(ps) for ps in lab.expected.routes_by_router().values())
     n_missing = sum(len(ps) for ps in missing.values())
     n_extra = sum(len(ps) for ps in extra.values())
     report = FailureReport(
@@ -345,7 +309,12 @@ def _routes_drift_report(
         expected=f"{total} routes installed, no others",
         actual=f"{n_missing} missing, {n_extra} unexpected",
         state_diff=[
-            DiffLine(f"{r} routing table", p, "absent", note=f"advertised by {_origin(lab, p, r)}")
+            DiffLine(
+                f"{r} routing table",
+                p,
+                "absent",
+                note=f"advertised by {lab.expected.originator(p, r)}",
+            )
             for r, ps in sorted(missing.items())
             for p in ps
         ]

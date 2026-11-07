@@ -12,7 +12,8 @@ import pytest
 from netcheck.backends import get_backend
 from netcheck.backends.base import SnapshotMismatch
 from netcheck.device import CapabilityMissing
-from netcheck.intent import expected_state, load_intent
+from netcheck.expected import Expected
+from netcheck.intent import load_intent
 from netcheck.lab import Lab, set_current
 from netcheck.labstate import LabState
 from netcheck.report import IntentViolation
@@ -84,7 +85,7 @@ def lab(request: pytest.FixtureRequest) -> Generator[Lab, None, None]:
     timing = Timing.load(ROOT / "timing.yaml", backend.timing_profile, intent.timer_vars())
     the_lab = Lab(
         intent=intent,
-        expected=expected_state(intent),
+        expected=Expected(intent),
         backend=backend,
         devices=backend.devices(),
         timing=timing,

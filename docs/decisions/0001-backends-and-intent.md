@@ -47,6 +47,14 @@ Ports are logical (`p1`, `p2`, ...). Each backend maps them to real names
 (`eth1` on the local backend, `swp1` on Cumulus). Nothing in the intent names a
 vendor, image or interface.
 
+### Update 2026-11-07: expected state is a typed module
+
+The third output is computed by `netcheck.expected.Expected`. Tests and assertions ask it
+questions (`vlan_membership(switch)`, `routes(router)`, `originator(prefix)`,
+`attachment(host)`, `failover()`) and get the same normalized types the capabilities
+return, instead of reading string keys from a dict. `expected_state.json` is its
+`to_json()` and is unchanged.
+
 ## Consequences
 
 - Adding a NOS means writing one backend, not touching tests.

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from netcheck.assertions import host_attachment
 from netcheck.backends.base import Backend
+from netcheck.expected import Expected
 
 
 def wrong_vlan(backend: Backend) -> str:
@@ -18,11 +18,12 @@ def wrong_vlan(backend: Backend) -> str:
     if not intent.isolated:
         raise LookupError("wrong-vlan needs an isolated pair in the intent (expect.isolated)")
     a, b = intent.isolated[0]
-    _, _, vlan_a = host_attachment(intent, a)
-    sw, port_b, vlan_b = host_attachment(intent, b)
-    assert vlan_a is not None
-    backend.devices()[sw].bridge.set_access_vlan(port_b, vlan_a)
-    return f"{sw}:{port_b} ({b}) moved from VLAN {vlan_b} to VLAN {vlan_a}"
+    expected = Expected(intent)
+    at_a, at_b = expected.attachment(a), expected.attachment(b)
+    if at_a is None or at_b is None or at_a.vlan is None:
+        raise LookupError(f"wrong-vlan needs {a} and {b} on switch access ports")
+    backend.devices()[at_b.switch].bridge.set_access_vlan(at_b.port, at_a.vlan)
+    return f"{at_b.switch}:{at_b.port} ({b}) moved from VLAN {at_b.vlan} to VLAN {at_a.vlan}"
 
 
 def missing_ospf_network(backend: Backend) -> str:

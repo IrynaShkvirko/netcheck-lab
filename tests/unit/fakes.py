@@ -23,7 +23,8 @@ from netcheck.capabilities import (
     Snapshot,
 )
 from netcheck.device import Device
-from netcheck.intent import Intent, expected_state
+from netcheck.expected import Expected
+from netcheck.intent import Intent
 from netcheck.lab import Lab
 from netcheck.ports import PortMap
 from netcheck.timing import Threshold, Timing
@@ -176,17 +177,15 @@ class FakeWorld:
         self.bridge = bridge
 
     def same_vlan(self, src: str, dst_ip: str) -> bool:
-        from netcheck.assertions import host_attachment
-
         dst = next(
             n for n in self.intent.nodes.values() if n.ip and n.ip.split("/")[0] == dst_ip
         ).name
-        _, pa, _ = host_attachment(self.intent, src)
-        _, pb, _ = host_attachment(self.intent, dst)
-        if not pa or not pb:
+        expected = Expected(self.intent)
+        at_a, at_b = expected.attachment(src), expected.attachment(dst)
+        if at_a is None or at_b is None:
             return True  # one end is behind a router: the fake world routes it
-        va = set(self.bridge.ports[pa].vlans)
-        vb = set(self.bridge.ports[pb].vlans)
+        va = set(self.bridge.ports[at_a.port].vlans)
+        vb = set(self.bridge.ports[at_b.port].vlans)
         return bool(va & vb)
 
 
@@ -264,12 +263,8 @@ class FakeFactory(CapabilityFactory):
 
 
 def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
-    expected = expected_state(intent)
-    sw_ports = {
-        p: PortVlans(v["mode"], tuple(v["vlans"]))
-        for p, v in expected["vlan_membership"]["sw1"].items()
-    }
-    bridge = FakeBridge(sw_ports)
+    expected = Expected(intent)
+    bridge = FakeBridge(expected.vlan_membership("sw1"))
     world = FakeWorld(intent, bridge)
     parts: dict[str, Any] = {"bridge": bridge}
     devices = assemble(intent, "fake", "eth", FakeFactory(world, parts))
