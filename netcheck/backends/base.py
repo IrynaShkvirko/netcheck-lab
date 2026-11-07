@@ -51,17 +51,37 @@ class Backend(ABC):
     def up(self, fresh: bool = False) -> tuple[bool, str]:
         """Deploy or reuse the lab and make sure a trustworthy baseline exists.
 
-        A baseline is taken only right after a real deploy (or if none exists yet),
-        never from a reused lab, which may still carry an injected fault. Returns
-        (deployed, baseline snapshot ID).
+        A running lab is reused only if it was built from this intent and still has
+        every intended port; otherwise (or with `fresh`) it is deployed again and the
+        deployed intent recorded. A baseline is taken only right after a real deploy (or
+        if none exists yet), never from a reused lab, which may still carry an injected
+        fault. Returns (deployed, baseline snapshot ID).
         """
-        deployed = self.deploy(fresh=fresh)
+        deployed = self._deploy_unless_reusable(fresh)
         baseline = self.state.baseline()
         if deployed or baseline is None:
             baseline = self.snapshot("baseline")
             self.state.set_baseline(baseline)
             self.state.clear_faults()
         return deployed, baseline
+
+    def _deploy_unless_reusable(self, fresh: bool) -> bool:
+        """Reuse the running lab if it can be trusted, else deploy. True if deployed."""
+        if self.is_running() and not fresh:
+            built_from = self.state.deployed_intent()
+            missing = self.missing_ports()
+            if built_from == self.intent.digest and not missing:
+                return False
+            if missing:
+                print(f"lab is running but degraded (missing {', '.join(missing)}); redeploying")
+            else:
+                print(
+                    f"lab was built from intent {built_from or 'unknown'}, "
+                    f"intent is now {self.intent.digest}; redeploying"
+                )
+        self.deploy()
+        self.state.set_deployed_intent(self.intent.digest)
+        return True
 
     def reset(self, snapshot_id: str | None = None) -> str:
         """Restore a snapshot, the baseline by default; returns the restored ID.
@@ -94,14 +114,15 @@ class Backend(ABC):
         raise NotImplementedError(f"the {self.name} backend cannot generate a topology yet")
 
     @abstractmethod
-    def deploy(self, fresh: bool = False) -> bool:
-        """Bring the lab up. Returns True if this call deployed it (False = reused)."""
+    def deploy(self) -> None:
+        """Build the lab now, replacing a running one. `up()` decides when."""
 
     @abstractmethod
     def destroy(self) -> None: ...
 
     @abstractmethod
-    def is_running(self) -> bool: ...
+    def is_running(self) -> bool:
+        """Every node of the lab is up (it may still be degraded or from another intent)."""
 
     @abstractmethod
     def devices(self) -> dict[str, Device]: ...

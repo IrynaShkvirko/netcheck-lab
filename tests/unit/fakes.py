@@ -198,18 +198,18 @@ class FakeBackend(Backend):
     def __init__(self, intent: Intent, devices: dict[str, Device], root: Path) -> None:
         super().__init__(intent, {}, root)
         self._devices = devices
-        self.deploys: list[bool] = []
-        self.deploy_result = False
+        self.running = True  # a lab is up; set False for "nothing deployed yet"
+        self.deploys = 0
 
-    def deploy(self, fresh: bool = False) -> bool:
-        self.deploys.append(fresh)
-        return self.deploy_result or fresh
+    def deploy(self) -> None:
+        self.deploys += 1
+        self.running = True
 
     def destroy(self) -> None:
         pass
 
     def is_running(self) -> bool:
-        return True
+        return self.running
 
     def devices(self) -> dict[str, Device]:
         return self._devices

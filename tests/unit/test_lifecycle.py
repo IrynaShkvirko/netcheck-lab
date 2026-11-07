@@ -106,3 +106,53 @@ def test_pytest_snapshot_with_an_unknown_id_is_a_usage_error(pytester, monkeypat
     result = _session_run(pytester, monkeypatch, lab.backend, "--snapshot", "nope")
     assert result.ret == 4
     result.stdout.fnmatch_lines(["*--snapshot: no snapshot nope*"])
+
+
+# ---- reuse the running lab, or deploy it (ADR-0003) -------------------------------------
+
+
+def _built_from_this_intent(backend) -> None:  # type: ignore[no-untyped-def]
+    backend.state.set_deployed_intent(backend.intent.digest)
+
+
+def test_intact_running_lab_is_reused(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, _ = fake
+    _built_from_this_intent(lab.backend)
+    lab.backend.state.set_baseline("baseline-kept")
+    assert lab.backend.up() == (False, "baseline-kept")
+    assert lab.backend.deploys == 0
+
+
+def test_lab_built_from_another_intent_is_redeployed(fake, capsys) -> None:  # type: ignore[no-untyped-def]
+    lab, _ = fake
+    lab.backend.state.set_deployed_intent("0123abcd")
+    lab.backend.state.set_baseline("baseline-old")
+    deployed, baseline = lab.backend.up()
+    assert deployed and baseline != "baseline-old" and lab.backend.deploys == 1
+    assert lab.backend.state.deployed_intent() == lab.intent.digest
+    assert "built from intent 0123abcd" in capsys.readouterr().out
+
+
+def test_degraded_lab_is_redeployed(fake, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    lab, _ = fake
+    _built_from_this_intent(lab.backend)
+    monkeypatch.setattr(lab["r1"].links, "link_states", lambda ports: {})  # links lost
+    deployed, _ = lab.backend.up()
+    assert deployed and lab.backend.deploys == 1
+    assert "degraded (missing r1:p1 (eth1)" in capsys.readouterr().out
+
+
+def test_lab_that_is_not_running_is_deployed_quietly(fake, capsys) -> None:  # type: ignore[no-untyped-def]
+    lab, _ = fake
+    lab.backend.running = False
+    deployed, _ = lab.backend.up()
+    assert deployed and lab.backend.deploys == 1
+    assert lab.backend.state.deployed_intent() == lab.intent.digest
+    assert capsys.readouterr().out == ""
+
+
+def test_fresh_redeploys_an_intact_lab(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, _ = fake
+    _built_from_this_intent(lab.backend)
+    deployed, _ = lab.backend.up(fresh=True)
+    assert deployed and lab.backend.deploys == 1
