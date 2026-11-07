@@ -1,0 +1,27 @@
+# Lab profile for mutation testing (.claude/skills/mutation-testing, "Lab profile").
+# mutmut only reads the config in the directory it runs from, so this folder holds a
+# second config; the entries next to it are symlinks to the real tree. Run it with
+# `make mutate-lab GROUP=...` on a machine with a running lab, never in CI.
+
+[tool.mutmut]
+source_paths = ["netcheck/"]
+# Only the local backend: the NVIDIA backend cannot deploy a lab yet. Which functions
+# run is chosen by mutant-name globs in the Makefile; snapshot/restore, the lifecycle,
+# the plugin and the per-test run are never mutated here (lab isolation runs real code).
+only_mutate = ["netcheck/backends/local.py"]
+pytest_add_cli_args_test_selection = ["tests/lab"]
+# Copy the running lab's state too: the run reuses that lab and its baseline instead of
+# redeploying, and its snapshots and ledger changes stay in the copy.
+also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py", ".netcheck/"]
+# Lab tests poll for convergence; give a mutant room before calling it a timeout.
+timeout_multiplier = 3.0
+timeout_constant = 60.0
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+markers = [
+    "smoke: lab is up and links are operational",
+    "functional: VLAN, reachability and OSPF behaviour",
+    "resilience: failures and convergence",
+    "drift: live state vs intent",
+]

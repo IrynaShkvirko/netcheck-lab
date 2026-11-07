@@ -1,6 +1,6 @@
 ---
 name: mutation-testing
-description: "Mutation testing for netcheck with mutmut over tests/unit. Use when checking whether the unit tests would catch a bug in netcheck code, finding weak or missing assertions, triaging mutmut survivors, or proving a new test kills a mutant."
+description: "Mutation testing for netcheck with mutmut over tests/unit, plus an opt-in lab profile over tests/lab. Use when checking whether the unit tests would catch a bug in netcheck code, finding weak or missing assertions, triaging mutmut survivors, or proving a new test kills a mutant."
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
@@ -19,7 +19,7 @@ would notice if it were wrong.
 
 | Use it to | Not for |
 |---|---|
-| Check that tests around a parser, `Expected`, `PortMap` or a drift check really assert their output | Lab behaviour: mutmut runs `tests/unit` only, never `tests/lab` |
+| Check that tests around a parser, `Expected`, `PortMap` or a drift check really assert their output | Everyday lab behaviour checks: the lab profile is slow and opt-in (§ "Lab profile") |
 | Find assertions that are too weak (checking a fake's reply instead of what was sent) | Writing tests from scratch (write them, then mutate) |
 | Prove that a new test kills the mutant it targets | The two real transports, which are excluded (no unit test can reach them) |
 
@@ -123,6 +123,61 @@ assert PortMap({"p1": "eth1"}).real("p9") == "p9"
 
 One finding per behaviour, not per mutant: mutants 7, 8 and 9 of the same function are
 all this one gap.
+
+## Lab profile (tests/lab, opt-in)
+
+The unit run cannot reach the local backend's real commands: captures, ping streams, FRR
+reads, link and bridge changes, `docker ps`. The lab profile mutates exactly those and runs
+`tests/lab` against a **running lab**:
+
+```bash
+make lab-up                          # a deployed, healthy lab first
+make mutate-lab GROUP=FrrOspf        # LinuxShell | FrrOspf | links-bridge | backend | all
+```
+
+| Group | Mutants | Functions |
+|---|---|---|
+| `LinuxShell` | 131 | ping, captures, streams, host routes, neighbors |
+| `FrrOspf` | 46 | neighbors, routes, LSDB, interface settings, area changes |
+| `links-bridge` | 64 | link state and changes, VLAN membership and changes |
+| `backend` | 79 | `LocalBackend` `is_running`, `environment`, `devices`, `open_transport`, `container` |
+| `all` | 320 | all of the above |
+
+Each mutant runs the lab tests that reach its function, so expect minutes per mutant, not
+seconds; start with one group. The cost per mutant has not been measured yet.
+
+**How it is set up.** mutmut only reads the config in the directory it runs from, so the
+profile is the folder `mutation/lab/`: its own `pyproject.toml` (mutate only
+`netcheck/backends/local.py`, test with `tests/lab`, longer timeouts) and symlinks to the
+real tree. `make mutate-lab` runs mutmut from there; its working copy is
+`mutation/lab/mutants/`, so the lab run never touches the unit run's results. To look at
+lab results afterwards, run the same commands from that folder:
+`cd mutation/lab && uv run --project ../.. mutmut results` (with `UV_PROJECT_ENVIRONMENT`
+set to the absolute path of the venv).
+
+**Safety rules, all built in:**
+
+- **The lab must be green first.** `make mutate-lab` runs `make test-lab` and stops if it
+  fails: a red lab turns every mutant into a false kill.
+- **One mutant at a time** (`--max-children 1`): lab tests share one set of containers.
+- **Lab isolation always runs real code.** Snapshot/restore (`backends/base.py`,
+  `LocalSnapshot`), the lifecycle (`up`, `reset`, `labstate`), the plugin, `testrun` and
+  `cleanup` are never mutated here; the unit run mutates them against fakes. `deploy` and
+  `destroy` are left out too: `deploy` never runs on a reused lab, `destroy` tears it down.
+- **The run uses a copy of the lab's state.** `.netcheck/` is copied into the working copy,
+  so the run reuses the running lab and its baseline instead of redeploying, and anything
+  it writes (snapshots, the fault ledger) stays in the copy.
+- **Timing cannot cause a kill.** `NETCHECK_SLA_MODE=record` turns SLA breaches into
+  warnings, so a slow mutant fails only on behaviour.
+
+**Distrust timing-sensitive kills.** mutmut counts any failure as a kill, including a flaky
+one. Re-run every mutant killed only by the failover, reconvergence or isolation tests
+(`uv run --project ../.. mutmut run <name>` from `mutation/lab/`) before believing it.
+
+**Not here:** the NVIDIA backend, which cannot deploy a lab yet. Never run the lab profile
+in CI.
+
+**Lab baseline:** not measured yet. Fill in the score per group after the first run.
 
 ## Many survivors
 
