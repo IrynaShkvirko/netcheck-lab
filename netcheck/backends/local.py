@@ -557,26 +557,12 @@ class LocalBackend(Backend):
     def render(self) -> Path:
         return render(self.intent, self.settings["images"], self.build_dir, self.prefix)
 
-    def deploy(self, fresh: bool = False) -> bool:
+    def deploy(self) -> None:
         self.render()
-        if self.is_running() and not fresh:
-            built_from = self.state.deployed_intent()
-            missing = self.missing_ports()
-            if built_from == self.intent.digest and not missing:
-                return False
-            if missing:
-                print(f"lab is running but degraded (missing {', '.join(missing)}); redeploying")
-            else:
-                print(
-                    f"lab was built from intent {built_from or 'unknown'}, "
-                    f"intent is now {self.intent.digest}; redeploying"
-                )
-            self._devices = None
+        self._devices = None  # containers are recreated: adapters must not outlive them
         subprocess.run(
             [*self.clab, "deploy", "-t", str(self.topology_file), "--reconfigure"], check=True
         )
-        self.state.set_deployed_intent(self.intent.digest)
-        return True
 
     def destroy(self) -> None:
         subprocess.run(

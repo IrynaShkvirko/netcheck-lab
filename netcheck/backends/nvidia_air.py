@@ -396,7 +396,7 @@ class NvidiaAirBackend(Backend):
             "(JSON or DOT) from the intent with swp port names (ADR-0001 open question)."
         )
 
-    def deploy(self, fresh: bool = False) -> bool:
+    def deploy(self) -> None:
         self._require_token()
         raise NotImplementedError(
             "Create an Air simulation from the generated topology, wait for boot, "

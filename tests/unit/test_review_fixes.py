@@ -85,6 +85,7 @@ def test_failover_requires_primary_path_before_failure(fake) -> None:  # type: i
 def test_reused_lab_keeps_existing_baseline(fake) -> None:  # type: ignore[no-untyped-def]
     lab, _ = fake
     backend = lab.backend
+    backend.state.set_deployed_intent(lab.intent.digest)  # running, built from this intent
     backend.state.set_baseline("baseline-original")
     backend.state.add_fault("wrong-vlan", "sw1:p3 moved")
     deployed, baseline = backend.up()

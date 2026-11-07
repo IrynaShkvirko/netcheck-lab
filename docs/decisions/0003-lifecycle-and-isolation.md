@@ -103,6 +103,11 @@ always used the local images and the `eth` prefix.
 - The CLI and the pytest session fixture only call these. The CLI uses `backend.state`;
   the pytest run header keeps a read-only `LabState`, since it prints before any backend
   exists.
+- **`Backend.up()` also decides reuse or redeploy** (added after review 2): a running lab is
+  reused only if it was built from this intent and has every intended port; otherwise, or
+  with `--fresh`, it is deployed again and the deployed intent recorded. A backend's
+  `deploy()` only builds the lab; the rule is the same for every backend and tested on the
+  fake one.
 
 
 - Registry first, snapshot second: the registry undoes test actions in reverse
