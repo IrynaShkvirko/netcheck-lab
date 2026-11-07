@@ -15,18 +15,12 @@ from netcheck.ports import PortMap
 from netcheck.report import IntentViolation
 from netcheck.transport.base import CommandResult
 
-
-class _StubTransport:
-    def __init__(self, stdout: str, rc: int, stderr: str = "") -> None:
-        self.log = DeviceLog("h1")
-        self.result = CommandResult("ping", stdout, stderr, rc, target="clab-x-h1")
-
-    def run(self, cmd: str, **_: object) -> CommandResult:
-        return self.result
+from .fakes_local import ScriptedTransport
 
 
 def _shell(stdout: str, rc: int, stderr: str = "") -> LinuxShell:
-    return LinuxShell(_StubTransport(stdout, rc, stderr), {"p1": "eth1"}, "h1")  # type: ignore[arg-type]
+    reply = CommandResult("ping", stdout, stderr, rc, target="clab-x-h1")
+    return LinuxShell(ScriptedTransport(default=reply), PortMap({"p1": "eth1"}), "h1")
 
 
 # ---- #1: a ping that never ran must not look like "no replies" ----
@@ -310,26 +304,17 @@ expect:
 
 
 def test_link_states_reads_all_ports_in_one_call() -> None:
-    import json
 
     from netcheck.backends.local import LinuxLinks
 
-    calls: list[str] = []
-
-    class T:
-        log = DeviceLog("r1")
-
-        def run(self, cmd: str, **_: object) -> CommandResult:
-            calls.append(cmd)
-            data = [
-                {"ifname": "eth1", "operstate": "UP", "flags": ["UP"]},
-                {"ifname": "eth2", "operstate": "DOWN", "flags": []},
-            ]
-            return CommandResult(cmd, json.dumps(data), "", 0)
-
-    links = LinuxLinks(T(), {"p1": "eth1", "p2": "eth2", "p3": "eth3"})  # type: ignore[arg-type]
+    data = [
+        {"ifname": "eth1", "operstate": "UP", "flags": ["UP"]},
+        {"ifname": "eth2", "operstate": "DOWN", "flags": []},
+    ]
+    t = ScriptedTransport({"ip -j link show": [data]})
+    links = LinuxLinks(t, PortMap({"p1": "eth1", "p2": "eth2", "p3": "eth3"}))
     states = links.link_states(["p1", "p2", "p3"])
-    assert calls == ["ip -j link show"]
+    assert t.commands == ["ip -j link show"]
     assert states["p1"].admin_up and states["p1"].oper_up
     assert not states["p2"].admin_up and not states["p2"].oper_up
     assert "p3" not in states  # missing in the container: reported as missing, not crashing

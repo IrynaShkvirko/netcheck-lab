@@ -30,7 +30,7 @@ class NvueRestTransport:
     """Thin wrapper over https://<host>:8765/nvue_v1/...
 
     Config changes follow the NVUE revision flow: create a revision, PATCH
-    changes into it, then apply it (see NvueSnapshot in backends/nvidia_air.py).
+    changes into it, then apply it (see apply_changes in backends/nvidia_air.py).
     """
 
     def __init__(

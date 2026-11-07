@@ -11,6 +11,7 @@ from netcheck.capabilities import Bridge, Links, Ospf, Shell, Snapshot
 from netcheck.device import CapabilityMissing
 from netcheck.ports import PortMap
 
+from .fakes_local import ScriptedTransport
 from .fakes_nvue import FakeNvueTransport
 
 
@@ -27,7 +28,7 @@ def test_port_map_for_node_uses_the_backend_prefix(intent) -> None:  # type: ign
 
 
 def test_local_backend_gives_each_role_its_capabilities(intent) -> None:  # type: ignore[no-untyped-def]
-    devices = assemble(intent, "local", "eth", LocalFactory(lambda n: f"clab-x-{n}"))
+    devices = assemble(intent, "local", "eth", LocalFactory(lambda spec: ScriptedTransport()))
     assert set(devices) == set(intent.nodes)
     kinds = {name: set(d.capabilities) for name, d in devices.items()}
     assert kinds["r1"] == {Links, Ospf, Snapshot}

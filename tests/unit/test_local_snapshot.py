@@ -6,15 +6,15 @@ no reply are changes to the device: they succeed and are recorded in `writes`.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
 
 from netcheck.backends.local import FrrOspf, LinuxBridge, LinuxLinks, LinuxShell, LocalSnapshot
-from netcheck.devicelog import DeviceLog
 from netcheck.ports import PortMap
-from netcheck.transport.base import CommandResult, TransportError
+from netcheck.transport.base import TransportError
+
+from .fakes_local import ScriptedTransport
 
 PORTS = PortMap({"p1": "eth1", "p2": "eth2", "p3": "eth3", "p4": "eth4"})
 
@@ -39,22 +39,6 @@ end
 LINKS_UP = [{"ifname": f"eth{i}", "flags": ["UP"], "operstate": "UP"} for i in range(1, 5)]
 
 
-class ScriptedTransport:
-    def __init__(self, replies: dict[str, list[Any]]) -> None:
-        self.log = DeviceLog("dev")
-        self.replies = {cmd: list(r) for cmd, r in replies.items()}
-        self.writes: list[str] = []
-
-    def run(self, cmd: str, **_: object) -> CommandResult:
-        if cmd not in self.replies:
-            self.writes.append(cmd)
-            return CommandResult(cmd, "", "", 0)
-        queue = self.replies[cmd]
-        reply = queue.pop(0) if len(queue) > 1 else queue[0]
-        out = reply if isinstance(reply, str) else json.dumps(reply)
-        return CommandResult(cmd, out, "", 0)
-
-
 def _links(down: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     return [{**ln, "flags": [] if ln["ifname"] in down else ["UP"]} for ln in LINKS_UP]
 
@@ -68,8 +52,8 @@ def router(running_configs: list[str], links: list[Any] | None = None):  # type:
     )
     snap = LocalSnapshot(
         "r1",
-        LinuxLinks(t, PORTS),  # type: ignore[arg-type]
-        ospf=FrrOspf(t, PORTS),  # type: ignore[arg-type]
+        LinuxLinks(t, PORTS),
+        ospf=FrrOspf(t, PORTS),
     )
     return snap, t
 
@@ -130,8 +114,8 @@ def switch(bridge_replies: list[Any]):  # type: ignore[no-untyped-def]
     t = ScriptedTransport({"ip -j link show": [LINKS_UP], "bridge -j vlan show": bridge_replies})
     snap = LocalSnapshot(
         "sw1",
-        LinuxLinks(t, PORTS),  # type: ignore[arg-type]
-        bridge=LinuxBridge(t, PORTS),  # type: ignore[arg-type]
+        LinuxLinks(t, PORTS),
+        bridge=LinuxBridge(t, PORTS),
     )
     return snap, t
 
@@ -164,8 +148,8 @@ def test_host_routes_left_by_a_test_are_removed_and_default_restored() -> None:
     )
     snap = LocalSnapshot(
         "h1",
-        LinuxLinks(t, PortMap({"p1": "eth1"})),  # type: ignore[arg-type]
-        host=LinuxShell(t, PortMap({"p1": "eth1"}), "h1"),  # type: ignore[arg-type]
+        LinuxLinks(t, PortMap({"p1": "eth1"})),
+        host=LinuxShell(t, PortMap({"p1": "eth1"}), "h1"),
     )
     state = snap.take()
     snap.restore_to(state)

@@ -33,7 +33,7 @@ from netcheck.capabilities import (
 from netcheck.device import Device
 from netcheck.ports import PortMap
 from netcheck.render import BRIDGE, render
-from netcheck.transport.base import CommandResult, TransportError
+from netcheck.transport.base import CommandResult, CommandTransport, TransportError
 from netcheck.transport.docker_exec import DockerExecTransport
 
 _PING = re.compile(r"(\d+) packets transmitted, (\d+) (?:packets )?received")
@@ -215,7 +215,7 @@ def host_route_diff(wanted: list[dict[str, Any]], live: list[dict[str, Any]]) ->
 
 
 class _Base:
-    def __init__(self, transport: DockerExecTransport, port_map: PortMap) -> None:
+    def __init__(self, transport: CommandTransport, port_map: PortMap) -> None:
         self.t = transport
         self.port_map = port_map
 
@@ -313,7 +313,7 @@ def _link_dict(port: str, info: dict[str, Any]) -> LinkState:
 
 
 class LinuxShell(_Base, Shell):
-    def __init__(self, transport: DockerExecTransport, port_map: PortMap, device: str) -> None:
+    def __init__(self, transport: CommandTransport, port_map: PortMap, device: str) -> None:
         super().__init__(transport, port_map)
         self.device = device
 
@@ -484,19 +484,20 @@ class LocalSnapshot(Snapshot):
 
 class LocalFactory(CapabilityFactory):
     """Adapters of the local backend: Linux links and shell, FRR, Linux bridge, all over
-    `docker exec` into the node's container. Switches get a shell too (captures)."""
+    one command transport per node (`docker exec` into its container in the lab, a
+    scripted fake in tests). Switches get a shell too (captures)."""
 
-    def __init__(self, container: Callable[[str], str]) -> None:
-        self.container = container
-        self._transports: dict[str, DockerExecTransport] = {}
+    def __init__(self, open_transport: Callable[[DeviceSpec], CommandTransport]) -> None:
+        self.open_transport = open_transport
+        self._transports: dict[str, CommandTransport] = {}
         self._links: dict[str, LinuxLinks] = {}
         self._ospf: dict[str, FrrOspf] = {}
         self._bridge: dict[str, LinuxBridge] = {}
         self._shell: dict[str, LinuxShell] = {}
 
-    def _t(self, spec: DeviceSpec) -> DockerExecTransport:
+    def _t(self, spec: DeviceSpec) -> CommandTransport:
         if spec.name not in self._transports:
-            self._transports[spec.name] = DockerExecTransport(self.container(spec.name), spec.log)
+            self._transports[spec.name] = self.open_transport(spec)
         return self._transports[spec.name]
 
     def links(self, spec: DeviceSpec) -> Links:
@@ -554,6 +555,9 @@ class LocalBackend(Backend):
         ).stdout.split()
         return len(out) == len(self.intent.nodes)
 
+    def open_transport(self, spec: DeviceSpec) -> CommandTransport:
+        return DockerExecTransport(self.container(spec.name), spec.log)
+
     def render(self) -> Path:
         return render(self.intent, self.settings["images"], self.build_dir, self.prefix)
 
@@ -572,7 +576,7 @@ class LocalBackend(Backend):
     # devices
     def devices(self) -> dict[str, Device]:
         if self._devices is None:
-            factory = LocalFactory(self.container)
+            factory = LocalFactory(self.open_transport)
             self._devices = assemble(self.intent, self.name, self.prefix, factory)
         return self._devices
 
