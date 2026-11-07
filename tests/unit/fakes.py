@@ -268,7 +268,6 @@ def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
         devices=devices,
         timing=fast_timing(),
         artifacts_dir=tmp,
-        test_artifacts=tmp,
     )
     return lab, parts
 
