@@ -8,7 +8,7 @@ CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
 
 .PHONY: install install-clab render lab-up lab-fresh lab-down lab-reset fault-wrong-vlan \
         fault-missing-ospf test-unit test-lab test-lab-live smoke demo \
-        lint typecheck check pin-images
+        lint typecheck check mutate pin-images
 
 install:            ## Python deps (uv)
 	uv sync
@@ -63,6 +63,10 @@ typecheck:
 	uv run mypy
 
 check: lint typecheck test-unit
+
+mutate:             ## mutation testing over tests/unit (slow; see .claude/skills/mutation-testing)
+	uv run mutmut run
+	uv run mutmut results
 
 pin-images:         ## print image digests to paste into backends.yaml
 	@for img in $$(grep -E '^\s+(router|switch|host):' backends.yaml | awk '{print $$2}' | sort -u); do \

@@ -8,3 +8,6 @@ build/
 artifacts/
 .netcheck/
 clab-*/
+
+# mutation testing working tree (mutmut)
+mutants/
