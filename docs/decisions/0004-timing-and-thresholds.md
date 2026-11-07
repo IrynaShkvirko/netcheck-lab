@@ -55,6 +55,10 @@ Values live in `timing.yaml`, per backend profile, and may reference intent time
    (added 2026-11-07). A `TransportError` from a polling probe is retried until the
    timeout; if time runs out, the last error is the timeout's value and the failure
    report says "no answer: <error>". Other exceptions still stop the test at once.
+6. **Every measurement goes through `Timing`** (added 2026-11-07): values with an SLA through
+   `record` (an unknown check name fails), values without one, such as the control-plane
+   reconvergence time, through `observe`. `measure_reconvergence` only measures; the test
+   records the data-plane outage against its SLA as a step of its own (ADR-0006).
 
 ## Consequences
 

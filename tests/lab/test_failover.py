@@ -43,7 +43,6 @@ def test_primary_link_failure_reroutes_via_backup(lab: Lab) -> None:
             prefix=plan.prefix,
             expected_next_hop=plan.backup_hop,
             action=take_primary_down,
-            enforce_sla=False,
         )
 
     sla = lab.timing["reconverge_local_link"].sla
