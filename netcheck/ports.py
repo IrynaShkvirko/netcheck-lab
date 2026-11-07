@@ -5,7 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 
 from netcheck.intent import Intent
-from netcheck.render import port_name
+
+
+def port_name(logical: str, prefix: str) -> str:
+    """Map a logical port (p1) to a backend port (eth1, swp1)."""
+    if not logical.startswith("p") or not logical[1:].isdigit():
+        raise ValueError(f"logical ports look like p1, p2...; got {logical!r}")
+    return f"{prefix}{logical[1:]}"
 
 
 class PortMap(Mapping[str, str]):

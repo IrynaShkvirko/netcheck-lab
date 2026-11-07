@@ -8,7 +8,6 @@ from typing import Any, cast
 
 from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
 from netcheck.backends.base import Backend
-from netcheck.backends.local import parse_frr_interfaces
 from netcheck.capabilities import (
     Bridge,
     CaptureHandle,
@@ -27,7 +26,6 @@ from netcheck.device import Device
 from netcheck.expected import Expected
 from netcheck.intent import Intent
 from netcheck.lab import Lab
-from netcheck.ports import PortMap
 from netcheck.timing import Threshold, Timing
 
 
@@ -36,7 +34,7 @@ class FakeOspf(Ospf):
         self.nbrs: list[OspfNeighbor] = []
         self.rib: dict[str, Route] = {}
         self.lsdb: set[str] = set()
-        self.config = ""
+        self.interfaces: dict[str, OspfInterface] = {}  # what the router reports
         self.area_overrides: dict[str, int | None] = {}
 
     def neighbors(self) -> list[OspfNeighbor]:
@@ -49,11 +47,8 @@ class FakeOspf(Ospf):
         return self.lsdb
 
     def interface_settings(self) -> dict[str, OspfInterface]:
-        """Parsed from `config` (FRR format, ethN = pN) with the backend's own parser,
-        then any set_interface_area overrides applied."""
-        settings = parse_frr_interfaces(
-            self.config, PortMap({f"p{i}": f"eth{i}" for i in range(1, 10)})
-        )
+        """`interfaces`, with any set_interface_area overrides applied."""
+        settings = dict(self.interfaces)
         for port, area in self.area_overrides.items():
             current = settings.get(port, OspfInterface(port))
             settings[port] = replace(current, area=None if area is None else str(area))
@@ -284,27 +279,13 @@ def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
 
 # ---- a healthy lab, for running the real tests/lab files on fakes -----------------
 
-_R1_CONFIG = (
-    "interface eth1.10\n ip address 10.0.10.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\n"
-    "interface eth2\n ip address 10.0.12.0/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
-    " ip ospf hello-interval 1\nexit\n!\n"
-    "interface eth3\n ip address 10.0.12.2/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
-    " ip ospf hello-interval 1\nexit\n!\n"
-)
-_R2_CONFIG = (
-    "interface eth1\n ip address 10.0.12.1/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
-    " ip ospf hello-interval 1\nexit\n!\n"
-    "interface eth2\n ip address 10.0.12.3/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
-    " ip ospf hello-interval 1\nexit\n!\n"
-    "interface eth3\n ip address 10.0.30.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\n"
-)
-
 
 def make_healthy(lab: Lab, parts: dict[str, Any]) -> None:
     """Fill the fakes with the state of a working campus-mini lab. r1's route to h4's LAN
     follows r1's primary link: via 10.0.12.1 while p2 is up, via 10.0.12.3 when it is down."""
     r1, r2 = parts["ospf_r1"], parts["ospf_r2"]
-    r1.config, r2.config = _R1_CONFIG, _R2_CONFIG
+    r1.interfaces = lab.expected.ospf_interfaces("r1")
+    r2.interfaces = lab.expected.ospf_interfaces("r2")
     r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2"), OspfNeighbor("2.2.2.2", "Full", "p3")]
     r2.nbrs = [OspfNeighbor("1.1.1.1", "Full", "p1"), OspfNeighbor("1.1.1.1", "Full", "p2")]
     r1_links = lab["r1"].links

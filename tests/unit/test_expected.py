@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from netcheck.capabilities import PortVlans
+from netcheck.capabilities import OspfInterface, PortVlans
 from netcheck.expected import Adjacency, Attachment, Expected
 
 
@@ -43,11 +43,37 @@ def test_two_links_between_the_same_routers_are_two_adjacencies(expected: Expect
     assert [lk.label for lk in expected.links_between("r2", "r1")] == ["primary", "backup"]
 
 
+def test_ospf_interfaces_are_what_a_healthy_router_reports(expected: Expected) -> None:
+    r1 = expected.ospf_interfaces("r1")
+    assert list(r1) == ["p1.10", "p2", "p3"]  # link order, VLAN gateway sub-interface first
+    assert r1["p1.10"] == OspfInterface("p1.10", ("10.0.10.1/24",), "0", passive=True)
+    assert r1["p2"] == OspfInterface(
+        "p2", ("10.0.12.0/31",), "0", 1, 4, cost=10, network="point-to-point"
+    )
+    assert expected.ospf_interfaces("r2")["p3"].passive  # the LAN to h4
+    assert expected.ospf_interfaces("sw1") == {}
+
+
 def test_advertising_interfaces_include_vlan_gateways(expected: Expected) -> None:
     (lan,) = expected.advertising_interfaces("r2", "10.0.30.0/24")
-    assert (lan.name, lan.vlan, lan.address) == ("p3", None, "10.0.30.1/24")
+    assert (lan.name, lan.addresses) == ("p3", ("10.0.30.1/24",))
     (gw,) = expected.advertising_interfaces("r1", "10.0.10.0/24")
-    assert (gw.name, gw.port, gw.vlan, gw.address) == ("p1.10", "p1", 10, "10.0.10.1/24")
+    assert (gw.name, gw.addresses) == ("p1.10", ("10.0.10.1/24",))
+
+
+@pytest.mark.parametrize("prefix", ["eth", "swp"])
+@pytest.mark.parametrize("router", ["r1", "r2"])
+def test_rendered_frr_config_parses_back_to_the_intended_interfaces(  # type: ignore[no-untyped-def]
+    intent, expected: Expected, router: str, prefix: str
+) -> None:
+    """The FRR writer (render) and the FRR reader (local backend) agree with Expected."""
+    from netcheck.backends.local import parse_frr_interfaces
+    from netcheck.ports import PortMap
+    from netcheck.render import frr_config
+
+    ports = PortMap.for_node(intent, router, prefix)
+    parsed = parse_frr_interfaces(frr_config(intent, router, prefix), ports)
+    assert parsed == expected.ospf_interfaces(router)
 
 
 def test_attachment_is_none_for_a_host_behind_a_router(expected: Expected) -> None:

@@ -9,14 +9,7 @@ import yaml
 
 from netcheck.expected import Expected
 from netcheck.intent import Intent
-
-
-def port_name(logical: str, prefix: str) -> str:
-    """Map a logical port (p1) to a backend port (eth1, swp1)."""
-    if not logical.startswith("p") or not logical[1:].isdigit():
-        raise ValueError(f"logical ports look like p1, p2...; got {logical!r}")
-    return f"{prefix}{logical[1:]}"
-
+from netcheck.ports import PortMap, port_name
 
 # ---- FRR ---------------------------------------------------------------
 
@@ -37,47 +30,49 @@ VTYSH_CONF = "service integrated-vtysh-config\n"
 
 
 def frr_config(intent: Intent, router: str, prefix: str = "eth") -> str:
-    node = intent.nodes[router]
-    o = intent.ospf
+    """FRR config for `router`: its intended OSPF interfaces (Expected), written out."""
+    ports = PortMap.for_node(intent, router, prefix)
     lines = ["frr defaults traditional", f"hostname {router}", "!"]
-    for lk in intent.links_of(router):
-        ep = lk.endpoint(router)
-        ifname = port_name(ep.port, prefix)
-        if lk.mode == "trunk":
-            for vid in lk.vlans:
-                vlan = intent.vlans[vid]
-                if vlan.gateway_node == router and vlan.gateway_ip:
-                    lines += [
-                        f"interface {ifname}.{vid}",
-                        f" description vlan{vid}-{vlan.name}-gateway",
-                        f" ip address {vlan.gateway_ip}",
-                        f" ip ospf area {o.area}",
-                        " ip ospf passive",
-                        "!",
-                    ]
-            continue
-        if not ep.ip:
-            continue
-        peer = lk.peer(router)
-        lines += [
-            f"interface {ifname}",
-            f" description to-{peer.node}-{peer.port}",
-            f" ip address {ep.ip}",
-            f" ip ospf area {o.area}",
-        ]
-        if lk.ospf_passive:
+    for name, want in Expected(intent).ospf_interfaces(router).items():
+        port, _, vid = name.partition(".")
+        if vid:
+            description = f"vlan{vid}-{intent.vlans[int(vid)].name}-gateway"
+        else:
+            peer = intent.link_at(router, port).peer(router)
+            description = f"to-{peer.node}-{peer.port}"
+        lines += [f"interface {ports.real(name)}", f" description {description}"]
+        lines += [f" ip address {a}" for a in want.addresses]
+        lines.append(f" ip ospf area {want.area}")
+        if want.passive:
             lines.append(" ip ospf passive")
         else:
             lines += [
-                f" ip ospf network {o.network}",
-                f" ip ospf hello-interval {o.hello_interval}",
-                f" ip ospf dead-interval {o.dead_interval}",
+                f" ip ospf network {want.network}",
+                f" ip ospf hello-interval {want.hello_interval}",
+                f" ip ospf dead-interval {want.dead_interval}",
             ]
-            if lk.ospf_cost is not None:
-                lines.append(f" ip ospf cost {lk.ospf_cost}")
+            if want.cost is not None:
+                lines.append(f" ip ospf cost {want.cost}")
         lines.append("!")
-    lines += ["router ospf", f" ospf router-id {node.router_id}", "!", "line vty", "!"]
+    router_id = intent.nodes[router].router_id
+    lines += ["router ospf", f" ospf router-id {router_id}", "!", "line vty", "!"]
     return "\n".join(lines) + "\n"
+
+
+def router_exec(intent: Intent, router: str, prefix: str = "eth") -> list[str]:
+    """Create the VLAN sub-interfaces the router's OSPF interfaces need; FRR (zebra)
+    assigns the addresses."""
+    ports = PortMap.for_node(intent, router, prefix)
+    cmds = []
+    for name in Expected(intent).ospf_interfaces(router):
+        port, _, vid = name.partition(".")
+        if vid:
+            parent = ports.real(port)
+            cmds += [
+                f"ip link add link {parent} name {parent}.{vid} type vlan id {vid}",
+                f"ip link set {parent}.{vid} up",
+            ]
+    return cmds
 
 
 # ---- Linux switch and hosts (executed by containerlab after start) ------
@@ -109,24 +104,6 @@ def host_exec(intent: Intent, host: str, prefix: str = "eth") -> list[str]:
     if node.gateway:
         cmds.append(f"ip route replace default via {node.gateway} dev {ifname}")
     return cmds
-
-
-def router_exec(intent: Intent, router: str, prefix: str = "eth") -> list[str]:
-    """Create VLAN sub-interfaces; FRR (zebra) assigns the addresses."""
-    cmds = []
-    for lk in intent.links_of(router):
-        if lk.mode == "trunk":
-            parent = port_name(lk.endpoint(router).port, prefix)
-            for vid in lk.vlans:
-                if intent.vlans[vid].gateway_node == router:
-                    cmds += [
-                        f"ip link add link {parent} name {parent}.{vid} type vlan id {vid}",
-                        f"ip link set {parent}.{vid} up",
-                    ]
-    return cmds
-
-
-# ---- Containerlab topology ---------------------------------------------
 
 
 def clab_topology(intent: Intent, images: dict[str, str], prefix: str = "eth") -> dict[str, Any]:
