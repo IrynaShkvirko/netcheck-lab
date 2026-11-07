@@ -13,6 +13,8 @@ from typing import Any, TypeVar
 
 import yaml
 
+from netcheck.transport.base import TransportError
+
 T = TypeVar("T")
 
 _EXPR = re.compile(r"^\s*([a-z_]+)\s*([+*])\s*([0-9.]+)\s*$")
@@ -23,11 +25,22 @@ class SlaWarning(UserWarning):
 
 
 class WaitTimeout(AssertionError):
+    """`last` is the last value the probe returned, or the TransportError it raised."""
+
     def __init__(self, check: str, timeout: float, last: object) -> None:
         super().__init__(f"{check}: condition not met within {timeout:.1f}s; last value: {last!r}")
         self.check = check
         self.timeout = timeout
         self.last = last
+
+    @property
+    def error(self) -> TransportError | None:
+        """The transport error of the last attempt, if it raised one."""
+        return self.last if isinstance(self.last, TransportError) else None
+
+    def describe(self, value: str) -> str:
+        """`value` (what the last answer showed), or why there was no answer."""
+        return f"no answer: {self.error}" if self.error is not None else value
 
 
 def evaluate(value: float | int | str, variables: dict[str, float]) -> float:
@@ -110,16 +123,28 @@ class Timing:
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> tuple[T, float]:
-        """Poll `probe` until `ok(value)`. Returns (value, elapsed). Never sleeps blindly."""
+        """Poll `probe` until `ok(value)`. Returns (value, elapsed). Never sleeps blindly.
+
+        A TransportError from the probe (a device that did not answer this time) counts
+        as "not yet" and is retried; if the time runs out it is the WaitTimeout's `last`,
+        so the failure report can show it (ADR-0004). Other exceptions go straight through.
+        """
         th = self.thresholds[check]
         start = clock()
-        last: T = probe()
-        while not ok(last):
+
+        def attempt() -> tuple[T | None, TransportError | None]:
+            try:
+                return probe(), None
+            except TransportError as exc:
+                return None, exc
+
+        value, error = attempt()
+        while error is not None or not ok(value):  # type: ignore[arg-type]
             if clock() - start >= th.timeout:
-                raise WaitTimeout(check, th.timeout, last)
+                raise WaitTimeout(check, th.timeout, error if error is not None else value)
             sleep(th.poll)
-            last = probe()
-        return last, clock() - start
+            value, error = attempt()
+        return value, clock() - start  # type: ignore[return-value]
 
     def record(self, check: str, value_s: float) -> Measurement:
         """Record a measured value and enforce the SLA according to the mode."""

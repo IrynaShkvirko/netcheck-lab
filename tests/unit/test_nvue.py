@@ -114,13 +114,13 @@ def test_link_states_read_every_port_in_one_call(intent) -> None:  # type: ignor
     t = FakeNvueTransport("r1")
     links = NvueLinks(t, nvue_ports(intent, "r1"))  # type: ignore[arg-type]
     states = links.link_states(["p1", "p2", "p3"])
-    assert {p: (s["ifname"], s["admin"], s["operstate"]) for p, s in states.items()} == {
-        "p1": ("swp1", "up", "UP"),
-        "p2": ("swp2", "up", "UP"),
-        "p3": ("swp3", "up", "UP"),
+    assert {p: (s.ifname, s.admin_up, s.oper_up) for p, s in states.items()} == {
+        "p1": ("swp1", True, True),
+        "p2": ("swp2", True, True),
+        "p3": ("swp3", True, True),
     }
     assert [c[:2] for c in t.calls] == [("GET", "interface")]
-    assert links.link_state("p2")["operstate"] == "UP"
+    assert links.link_state("p2").line() == "p2 (swp2) admin up, oper up [admin up, oper up]"
 
 
 @pytest.mark.parametrize(

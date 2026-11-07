@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from netcheck.capabilities import (
     Bridge,
     CaptureHandle,
     Links,
+    LinkState,
     Ospf,
     OspfInterface,
     OspfNeighbor,
@@ -286,24 +288,28 @@ class LinuxLinks(_Base, Links):
     def set_link(self, port: str, up: bool) -> None:
         self.run(f"ip link set {self.real(port)} {'up' if up else 'down'}").check()
 
-    def link_state(self, port: str) -> dict[str, str]:
+    def link_state(self, port: str) -> LinkState:
         (info,) = self.run(f"ip -j link show {self.real(port)}").check().json()
         return _link_dict(port, info)
 
-    def link_states(self, ports: list[str]) -> dict[str, dict[str, str]]:
+    def link_states(self, ports: list[str]) -> dict[str, LinkState]:
         """All requested ports from one `ip -j link show` (instead of one call per port).
         Ports missing from the container are left out."""
         by_name = {i.get("ifname"): i for i in self.run("ip -j link show").check().json() or []}
         return {p: _link_dict(p, by_name[self.real(p)]) for p in ports if self.real(p) in by_name}
 
 
-def _link_dict(port: str, info: dict[str, Any]) -> dict[str, str]:
-    return {
-        "port": port,
-        "ifname": info["ifname"],
-        "operstate": info.get("operstate", "?"),
-        "admin": "up" if "UP" in info.get("flags", []) else "down",
-    }
+def _link_dict(port: str, info: dict[str, Any]) -> LinkState:
+    """`ip -j link` entry -> LinkState. Admin up = the UP flag. Operationally up =
+    operstate UP, or UNKNOWN (veth and other drivers that do not report carrier)."""
+    operstate = str(info.get("operstate", "?"))
+    return LinkState(
+        port=port,
+        ifname=str(info["ifname"]),
+        admin_up="UP" in info.get("flags", []),
+        oper_up=operstate in ("UP", "UNKNOWN"),
+        detail=f"operstate {operstate}",
+    )
 
 
 class LinuxShell(_Base, Shell):
@@ -328,10 +334,8 @@ class LinuxShell(_Base, Shell):
         # nothing sent, means it never probed: that must not read as "isolated".
         if res.rc >= 2 or result.sent == 0:
             detail = (res.stderr or res.stdout).strip().splitlines()
-            raise TransportError(
-                f"{self.device}: ping {dst} did not run (rc={res.rc}): "
-                f"{detail[-1] if detail else 'no output'}"
-            )
+            reason = f"ping did not run (rc={res.rc}): {detail[-1] if detail else 'no output'}"
+            return replace(result, sent=0, received=0, error=reason)
         return result
 
     def add_host_route(self, prefix: str, port: str = "p1") -> None:
@@ -411,7 +415,9 @@ class LocalSnapshot(Snapshot):
     def take(self) -> dict[str, Any]:
         ports = list(self.links.port_map)
         state: dict[str, Any] = {
-            "links": {p: s["admin"] for p, s in self.links.link_states(ports).items()}
+            "links": {
+                p: "up" if s.admin_up else "down" for p, s in self.links.link_states(ports).items()
+            }
         }
         if self.bridge is not None:
             # intended ports only: restore puts those back; an extra port is drift to report
@@ -441,7 +447,7 @@ class LocalSnapshot(Snapshot):
         for port, admin in wanted.items():
             if port not in live:
                 raise TransportError(f"{self.device}: port {port} is gone")
-            if live[port]["admin"] != admin:
+            if live[port].admin_up != (admin == "up"):
                 self.links.set_link(port, admin == "up")
 
     @staticmethod

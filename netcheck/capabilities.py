@@ -53,12 +53,38 @@ class PortVlans:
 
 
 @dataclass(frozen=True)
+class LinkState:
+    """One port's link, normalized: each backend decides what "up" means for its NOS."""
+
+    port: str  # logical
+    ifname: str  # real interface name
+    admin_up: bool
+    oper_up: bool
+    detail: str = ""  # the backend's own words, for evidence ("admin up, oper DOWN")
+
+    def line(self) -> str:
+        admin = "up" if self.admin_up else "down"
+        oper = "up" if self.oper_up else "down"
+        text = f"{self.port} ({self.ifname}) admin {admin}, oper {oper}"
+        return f"{text} [{self.detail}]" if self.detail else text
+
+
+@dataclass(frozen=True)
 class PingResult:
+    """The outcome of a ping. `error` says why no probe left the host: a ping that did
+    not run is a result, never "no replies" (it must not read as isolated)."""
+
     src: str
     dst: str
     sent: int
     received: int
     raw: str = ""
+    error: str = ""
+
+    @property
+    def ran(self) -> bool:
+        """At least one probe was sent."""
+        return self.sent > 0 and not self.error
 
     @property
     def loss(self) -> int:
@@ -112,9 +138,9 @@ class Links(ABC):
     def set_link(self, port: str, up: bool) -> None: ...
 
     @abstractmethod
-    def link_state(self, port: str) -> dict[str, str]: ...
+    def link_state(self, port: str) -> LinkState: ...
 
-    def link_states(self, ports: list[str]) -> dict[str, dict[str, str]]:
+    def link_states(self, ports: list[str]) -> dict[str, LinkState]:
         """State of several ports. Backends override this to read them in one call;
         a port that does not exist is left out of the result."""
         return {p: self.link_state(p) for p in ports}
@@ -132,7 +158,9 @@ class Shell(ABC):
         interval: float = 0.2,
         deadline: float = 4.0,
         src_port: str = "p1",
-    ) -> PingResult: ...
+    ) -> PingResult:
+        """Never raises because the ping could not run: returns a result with sent=0 and
+        `error` set instead (see PingResult.ran)."""
 
     @abstractmethod
     def add_host_route(self, prefix: str, port: str = "p1") -> None: ...
@@ -150,7 +178,10 @@ class Shell(ABC):
     def start_capture(self, port: str, bpf: str = "") -> CaptureHandle: ...
 
     @abstractmethod
-    def stop_capture(self, handle: CaptureHandle, dest_dir: str) -> CaptureHandle: ...
+    def stop_capture(self, handle: CaptureHandle, dest_dir: str) -> CaptureHandle:
+        """Stop the capture, read its summary, copy the pcap to `dest_dir`. Calling it
+        again on a stopped handle returns the handle unchanged (the cleanup registry
+        stops every capture once more as a safety net)."""
 
     @abstractmethod
     def start_stream(self, dst: str, interval: float, deadline: float) -> str: ...

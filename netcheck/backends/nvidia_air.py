@@ -29,6 +29,7 @@ from netcheck.backends.base import Backend
 from netcheck.capabilities import (
     Bridge,
     Links,
+    LinkState,
     Ospf,
     OspfInterface,
     OspfNeighbor,
@@ -207,15 +208,14 @@ def parse_nvue_bridge(
     return dict(sorted(out.items()))
 
 
-def parse_nvue_link(port: str, ifname: str, iface: Any) -> dict[str, str]:
-    """One interface (rev=operational) -> the link dict the local backend returns:
-    {"port", "ifname", "admin": up|down, "operstate": UP|DOWN}."""
+def parse_nvue_link(port: str, ifname: str, iface: Any) -> LinkState:
+    """One interface (rev=operational) -> LinkState."""
     link = _dict(_dict(iface, ifname).get("link"), f"{ifname} link")
     if not link:
         raise NvueShapeError(f"{ifname}: no link section")
     admin = str(link.get("admin-status") or _enum(link.get("state")) or "?").lower()
-    oper = str(link.get("oper-status") or "?").upper()
-    return {"port": port, "ifname": ifname, "admin": admin, "operstate": oper}
+    oper = str(link.get("oper-status") or "?").lower()
+    return LinkState(port, ifname, admin == "up", oper == "up", f"admin {admin}, oper {oper}")
 
 
 # ---- config changes: the NVUE revision flow -----------------------------------------
@@ -319,11 +319,11 @@ class NvueLinks(_NvueBase, Links):
         state = "up" if up else "down"
         self.apply([("PATCH", f"interface/{self.port_map[port]}/link", {"state": {state: {}}})])
 
-    def link_state(self, port: str) -> dict[str, str]:
+    def link_state(self, port: str) -> LinkState:
         ifname = self.port_map[port]
         return parse_nvue_link(port, ifname, self.get(f"interface/{ifname}"))
 
-    def link_states(self, ports: list[str]) -> dict[str, dict[str, str]]:
+    def link_states(self, ports: list[str]) -> dict[str, LinkState]:
         """All requested ports from one GET of every interface."""
         interfaces = _dict(self.get(PATHS["interfaces"]), "interfaces")
         out = {}

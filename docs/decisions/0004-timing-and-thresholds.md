@@ -51,6 +51,10 @@ Values live in `timing.yaml`, per backend profile, and may reference intent time
    recorded as warnings plus JUnit properties on shared CI runners
    (`NETCHECK_SLA_MODE=record`)**, where timing is noisy. This keeps CI green on
    noise while keeping the trend visible.
+5. **A device that does not answer while polling is "not yet", not an error**
+   (added 2026-11-07). A `TransportError` from a polling probe is retried until the
+   timeout; if time runs out, the last error is the timeout's value and the failure
+   report says "no answer: <error>". Other exceptions still stop the test at once.
 
 ## Consequences
 

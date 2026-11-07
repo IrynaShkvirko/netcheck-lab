@@ -113,7 +113,7 @@ def _diagnose(
 
 
 def _link_line(router: Device, port: str) -> list[str]:
-    return [str(router.links.link_state(port))]
+    return [router.links.link_state(port).line()]
 
 
 # ---- assertions -----------------------------------------------------------------
@@ -141,7 +141,7 @@ def assert_ospf_neighbor_full(r1: Device, r2: Device, port: str | None = None) -
         report = FailureReport(
             verdict=f"{r1.name} must have a Full OSPF adjacency with {r2.name} ({rid}){via}",
             expected="state Full",
-            actual=f"state {exc.last}",
+            actual=exc.describe(f"state {exc.last}"),
         )
         for r in (r1, r2):
             evidence(report, f"{r.name} neighbors", partial(ospf_neighbor_lines, r))
@@ -176,12 +176,12 @@ def assert_route_present(router: Device, prefix: str) -> Route:
         route, elapsed = lab.timing.wait_until(
             "route_installed", lookup, lambda r: r is not None and r.installed
         )
-    except WaitTimeout:
+    except WaitTimeout as exc:
         origin = lab.expected.originator(prefix, exclude=router.name)
         report = FailureReport(
             verdict=f"{router.name} must learn {prefix} via OSPF from {origin}",
             expected=f"{prefix} installed in {router.name} routing table",
-            actual="route absent",
+            actual=exc.describe("route absent"),
         )
         neighbors = attempt(
             report, f"{router.name} neighbors", router.ospf.neighbors, list[OspfNeighbor]()
@@ -256,7 +256,7 @@ def assert_route_uses(router: Device, prefix: str, next_hop: str, why: str = "")
         report = FailureReport(
             verdict=f"{why}{router.name} must route {prefix} via {next_hop}",
             expected=f"next hop {next_hop}",
-            actual=f"next hops {list(last.next_hops)}" if last else "route absent",
+            actual=exc.describe(f"next hops {list(last.next_hops)}" if last else "route absent"),
         )
         evidence(report, f"{router.name} neighbors", partial(ospf_neighbor_lines, router))
         fail(report)
@@ -293,7 +293,10 @@ def assert_ospf_routes_match_intent(expected: Mapping[str, Collection[str]] | No
         )
     except WaitTimeout as exc:
         missing, extra = exc.last if isinstance(exc.last, tuple) else ({}, {})
-        fail(_routes_drift_report(lab, missing, extra))
+        report = _routes_drift_report(lab, missing, extra)
+        if exc.error is not None:
+            report.add_evidence("last read failed", [str(exc.error)])
+        fail(report)
     lab.timing.record("route_installed", elapsed)
 
 

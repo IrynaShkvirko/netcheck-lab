@@ -13,7 +13,8 @@ from netcheck.timing import WaitTimeout
 
 
 def assert_reachable(a: Device, b: Device) -> PingResult:
-    """a reaches b's address. Retries until the `reachability` timeout."""
+    """a reaches b's address. Retries until the `reachability` timeout, also while the
+    ping cannot run yet (no route to the network while OSPF converges)."""
     lab = current()
     dst = lab.intent.host_ip(b.name)
     th = lab.timing["reachability"]
@@ -21,14 +22,20 @@ def assert_reachable(a: Device, b: Device) -> PingResult:
         result, _ = lab.timing.wait_until(
             "reachability",
             lambda: a.shell.ping(dst, count=3, interval=0.2, deadline=3),
-            lambda r: r.received > 0,
+            lambda r: r.ran and r.received > 0,  # a ping that did not run: try again
         )
     except WaitTimeout as exc:
         last = exc.last if isinstance(exc.last, PingResult) else None
+        if last is None:
+            actual = exc.describe("no result")
+        elif not last.ran:
+            actual = last.error
+        else:
+            actual = f"{last.received}/{last.sent} replies"
         report = FailureReport(
             verdict=f"{a.name} must reach {b.name} ({dst})",
             expected=f"ICMP replies from {dst} within {th.timeout:.0f}s",
-            actual=f"{last.received}/{last.sent} replies" if last else "no result",
+            actual=actual,
         )
         evidence(report, f"{a.name} neighbor table", partial(_arp_table, a))
         for r in lab.by_role("router"):

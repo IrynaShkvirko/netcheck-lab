@@ -67,7 +67,7 @@ def measure_reconvergence(
                     f"before the failure, {router.name} must route {prefix} via {before_next_hop}"
                 ),
                 expected=f"next hop {before_next_hop}",
-                actual=f"next hops {exc.last!r}",
+                actual=exc.describe(f"next hops {exc.last!r}"),
             )
             report.add_evidence(
                 "diagnosis",
@@ -93,7 +93,7 @@ def measure_reconvergence(
                 f"within {th.timeout:.0f}s after the failure"
             ),
             expected=f"next hop {expected_next_hop}",
-            actual=f"next hops {exc.last!r}",
+            actual=exc.describe(f"next hops {exc.last!r}"),
         )
         evidence(report, f"{router.name} neighbors", lambda: ospf_neighbor_lines(router))
         stream = attempt(
