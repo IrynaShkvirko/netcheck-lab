@@ -334,7 +334,8 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
 | `netcheck/cleanup.py` | LIFO cleanup registry |
 | `netcheck/timing.py`, `timing.yaml` | thresholds derived from protocol timers |
 | `netcheck/report.py` | eight-part failure report |
-| `netcheck/pytest_plugin.py` | session lab, per-test snapshot + cleanup, report hook |
+| `netcheck/testrun.py` | one lab test's run: snapshot, steps, cleanup, restore, failure evidence |
+| `netcheck/pytest_plugin.py` | session lab; turns each test run's outcome and report into pytest results |
 
 ## Design decisions
 

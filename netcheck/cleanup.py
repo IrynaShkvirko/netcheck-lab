@@ -29,16 +29,12 @@ class _Action:
 @dataclass
 class CleanupRegistry:
     _stack: list[_Action] = field(default_factory=list)
-    errors: list[CleanupError] = field(default_factory=list)
 
     def register(self, description: str, fn: Callable[[], object]) -> None:
         self._stack.append(_Action(description, fn))
 
     def __len__(self) -> int:
         return len(self._stack)
-
-    def pending(self) -> list[str]:
-        return [a.description for a in reversed(self._stack)]
 
     def run(self) -> list[CleanupError]:
         """Run every registered undo, newest first. Returns errors from this run."""
@@ -52,5 +48,4 @@ class CleanupRegistry:
                 err = CleanupError(action.description, f"{type(exc).__name__}: {exc}")
                 run_errors.append(err)
                 log.warning("cleanup failed: %s (%s)", action.description, err.error)
-        self.errors.extend(run_errors)
         return run_errors

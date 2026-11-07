@@ -10,47 +10,11 @@ from typing import TYPE_CHECKING, Any
 from netcheck.cleanup import CleanupRegistry
 from netcheck.device import Device
 from netcheck.intent import Intent
-from netcheck.report import IntentViolation
+from netcheck.testrun import TestRun
 from netcheck.timing import Timing
 
 if TYPE_CHECKING:
     from netcheck.backends.base import Backend
-
-
-@dataclass
-class StepRecord:
-    number: int
-    title: str
-    status: str = "running"  # running | passed | failed
-    seconds: float = 0.0
-    # soft step: a failed check is recorded and the test goes on (see netcheck.steps)
-    soft: bool = False
-    failure: AssertionError | None = field(default=None, repr=False, compare=False)
-
-    @property
-    def continued(self) -> bool:
-        """Failed, but the test kept going; the failure is reported when the test ends."""
-        return self.failure is not None
-
-    def line(self) -> str:
-        mark = {"passed": "ok", "failed": "FAILED", "running": "..."}[self.status]
-        if self.continued:
-            mark += ", continued"
-        text = f"{self.number}. {self.title} [{mark}, {self.seconds:.1f}s]"
-        if self.failure is not None:
-            exc = self.failure
-            # the title already says what was checked; add what was found instead
-            found = exc.report.actual if isinstance(exc, IntentViolation) else ""
-            text += f" - actual: {found}" if found else f" - {failure_summary(exc)}"
-        return text
-
-
-def failure_summary(exc: AssertionError) -> str:
-    """One line for an assertion failure: the violated intent, or the assert message."""
-    if isinstance(exc, IntentViolation):
-        return exc.report.verdict
-    text = str(exc).strip()
-    return text.splitlines()[0] if text else type(exc).__name__
 
 
 @dataclass
@@ -60,13 +24,29 @@ class Lab:
     backend: Backend
     devices: dict[str, Device]
     timing: Timing
-    cleanup: CleanupRegistry = field(default_factory=CleanupRegistry)
     artifacts_dir: Path = Path("artifacts")
-    # per-test context, set by fixtures
-    test_artifacts: Path = Path("artifacts")
-    snapshot_id: str = ""
-    log_marks: dict[str, int] = field(default_factory=dict)
-    steps: list[StepRecord] = field(default_factory=list)
+    # the current test's state; before the first test, a run that covers the session
+    run: TestRun = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.run = TestRun(self.backend, self.devices, self.timing, self.artifacts_dir)
+
+    def start_test(self, test_id: str, label: str) -> TestRun:
+        """Begin a new test run: clear its artifacts, take its snapshot."""
+        self.run = TestRun.begin(
+            self.backend, self.devices, self.timing, self.artifacts_dir, test_id, label
+        )
+        return self.run
+
+    @property
+    def cleanup(self) -> CleanupRegistry:
+        """The current test's cleanup registry (ADR-0003, layer 2)."""
+        return self.run.cleanup
+
+    @property
+    def test_artifacts(self) -> Path:
+        """The current test's artifacts folder."""
+        return self.run.artifacts
 
     def __getitem__(self, name: str) -> Device:
         return self.devices[name]

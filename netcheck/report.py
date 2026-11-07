@@ -44,7 +44,6 @@ class FailureReport:
     repro_command: str = ""
     snapshot_id: str = ""
     artifacts_dir: str = ""
-    cleanup_errors: list[str] = field(default_factory=list)
 
     def add_evidence(self, title: str, lines: list[str]) -> None:
         self.evidence.setdefault(title, []).extend(lines)
@@ -95,9 +94,6 @@ class FailureReport:
             out.append(f"Restore state: python -m netcheck restore {self.snapshot_id}")
         if self.artifacts_dir:
             out.append(f"Artifacts: {self.artifacts_dir}")
-        if self.cleanup_errors:
-            out.append("Cleanup errors (did not change the verdict):")
-            out += [f"  {e}" for e in self.cleanup_errors]
         return "\n".join(out).rstrip() + "\n"
 
     def to_json(self) -> str:
@@ -115,7 +111,7 @@ def _diff(d: DiffLine) -> str:
 
 
 class IntentViolation(AssertionError):
-    """Raised by domain assertions. Carries the report; pytest hooks complete it."""
+    """Raised by domain assertions. Carries the report; the test run completes it."""
 
     def __init__(self, report: FailureReport) -> None:
         super().__init__(report.verdict)

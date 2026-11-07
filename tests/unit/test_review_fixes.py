@@ -441,7 +441,7 @@ def test_step_records_outcome_and_order(fake) -> None:  # type: ignore[no-untype
         pass
     with pytest.raises(ZeroDivisionError), step("second"):
         1 / 0  # noqa: B018
-    assert [(s.number, s.title, s.status) for s in lab.steps] == [
+    assert [(s.number, s.title, s.status) for s in lab.run.steps] == [
         (1, "first", "passed"),
         (2, "second", "failed"),
     ]
@@ -483,7 +483,7 @@ def test_interface_settings_mismatch_is_reported_per_port(fake) -> None:  # type
 
 
 def test_soft_step_records_the_failure_and_the_test_goes_on(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.steps import soft_failure_report, step
+    from netcheck.steps import step
 
     lab, _ = fake
     reached = []
@@ -492,14 +492,14 @@ def test_soft_step_records_the_failure_and_the_test_goes_on(fake) -> None:  # ty
             reached.append(port)
             assert port != "p2", f"{port} is wrong"
     assert reached == ["p1", "p2", "p3"]
-    assert [(s.status, s.continued) for s in lab.steps] == [
+    assert [(s.status, s.continued) for s in lab.run.steps] == [
         ("passed", False),
         ("failed", True),
         ("passed", False),
     ]
-    assert lab.steps[1].line().startswith("2. check p2 [FAILED, continued, ")
-    assert lab.steps[1].line().endswith(" - p2 is wrong")
-    report = soft_failure_report(lab.steps)
+    assert lab.run.steps[1].line().startswith("2. check p2 [FAILED, continued, ")
+    assert lab.run.steps[1].line().endswith(" - p2 is wrong")
+    report = lab.run.soft_failure_report()
     assert report is not None
     assert (report.verdict, report.actual) == ("p2 is wrong", "1 of 3 failed (steps 2)")
     (evidence,) = report.evidence["step 2: check p2"]  # pytest's assert explanation is kept
@@ -507,22 +507,22 @@ def test_soft_step_records_the_failure_and_the_test_goes_on(fake) -> None:  # ty
 
 
 def test_soft_step_still_stops_on_errors_that_are_not_check_failures(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.steps import soft_failure_report, step
+    from netcheck.steps import step
 
     lab, _ = fake
     with pytest.raises(ConnectionError), step("read the switch", continue_on_failure=True):
         raise ConnectionError("switch unreachable")
-    assert lab.steps[0].status == "failed" and not lab.steps[0].continued
-    assert soft_failure_report(lab.steps) is None
+    assert lab.run.steps[0].status == "failed" and not lab.run.steps[0].continued
+    assert lab.run.soft_failure_report() is None
 
 
 def test_no_soft_failures_means_no_report(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.steps import soft_failure_report, step
+    from netcheck.steps import step
 
     lab, _ = fake
     with step("fine", continue_on_failure=True):
         pass
-    assert soft_failure_report(lab.steps) is None
+    assert lab.run.soft_failure_report() is None
 
 
 def test_vlan_test_reports_every_bad_port_in_one_run(pytester) -> None:  # type: ignore[no-untyped-def]
