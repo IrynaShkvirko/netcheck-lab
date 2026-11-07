@@ -17,7 +17,7 @@ def test_restore_brings_every_device_back(fake) -> None:  # type: ignore[no-unty
     lab["sw1"].bridge.set_access_vlan("p3", 99)
     lab["r2"].ospf.set_interface_area("p3", None)
     lab.backend.restore(snap)
-    assert lab["r1"].links.link_state("p2")["admin"] == "up"
+    assert lab["r1"].links.link_state("p2").admin_up
     assert lab["sw1"].bridge.vlan_membership()["p3"] != PortVlans("access", (99,))
     assert parts["ospf_r2"].area_overrides == {}
 

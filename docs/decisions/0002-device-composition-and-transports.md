@@ -84,3 +84,17 @@ instead of the CapabilityMissing skip this ADR promises.
   names and back, VLAN sub-interfaces included. Adapters and parsers take it.
 - The test fakes use the same assembly; the NVUE lab test uses the real NVIDIA factory over
   a fake transport, and checks that host tests are skipped.
+
+## Revision (2026-11-07, link state and probes)
+
+- **`Links` returns `LinkState`** (port, interface name, `admin_up`, `oper_up`, and the
+  backend's own wording as `detail`), like every other capability returns a normalized
+  type. Each adapter decides what "up" means for its NOS (Linux `UNKNOWN` counts as up), so
+  lab tests no longer test Linux spellings.
+- **A ping that did not run is a result, not an exception.** `Shell.ping` returns
+  `PingResult` with `sent=0` and an `error` text (`ran` is false) when no probe left the
+  host. Reachability retries it until its timeout; isolation calls it inconclusive and
+  fails. Either way it never reads as "no replies".
+- **`Shell.stop_capture` may be called twice**; the second call returns the handle
+  unchanged (the cleanup registry stops every capture again as a safety net).
+

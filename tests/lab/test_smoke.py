@@ -25,11 +25,8 @@ def test_every_intended_port_is_up(lab: Lab) -> None:
                 s = states.get(port)
                 if s is None:
                     down.append(f"{dev.name}:{port} (missing)")
-                elif s["admin"] != "up" or s["operstate"] not in ("UP", "UNKNOWN"):
-                    down.append(
-                        f"{dev.name}:{port} ({s['ifname']} admin {s['admin']}, "
-                        f"oper {s['operstate']})"
-                    )
+                elif not (s.admin_up and s.oper_up):
+                    down.append(f"{dev.name}:{s.line()}")
         return down
 
     with step(f"Wait until all {total} ports are admin up and operationally up"):
@@ -37,7 +34,7 @@ def test_every_intended_port_is_up(lab: Lab) -> None:
             lab.timing.wait_until("interface_up", down_ports, lambda d: not d)
         except WaitTimeout as exc:
             still_down = exc.last if isinstance(exc.last, list) else []
-            raise AssertionError(f"ports not up: {', '.join(still_down)}") from exc
+            raise AssertionError(exc.describe(f"ports not up: {', '.join(still_down)}")) from exc
 
 
 def test_routers_run_ospf(lab: Lab) -> None:

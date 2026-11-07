@@ -110,7 +110,7 @@ def isolation_probe_count() -> int:
 def send_isolation_probes(a: Device, b: Device) -> PingResult:
     """Ping b from a for the full isolation window. Never stops early.
 
-    A probe that never left `a` makes the check inconclusive: that fails, it does not pass.
+    A ping that did not run makes the check inconclusive: that fails, it does not pass.
     """
     lab = current()
     window = lab.timing["isolation_window"].window or 4.0
@@ -118,12 +118,12 @@ def send_isolation_probes(a: Device, b: Device) -> PingResult:
     result = a.shell.ping(
         lab.intent.host_ip(b.name), count=count, interval=PROBE_INTERVAL, deadline=window
     )
-    if result.sent == 0:
+    if not result.ran:
         fail(
             FailureReport(
                 verdict=f"isolation {a.name}-{b.name} inconclusive: no probes were sent",
                 expected=f"{count} ICMP probes sent, 0 replies",
-                actual="0 probes sent",
+                actual=result.error or "0 probes sent",
             )
         )
     return result

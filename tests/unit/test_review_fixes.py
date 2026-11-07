@@ -11,7 +11,7 @@ from netcheck.convergence import measure_reconvergence
 from netcheck.devicelog import DeviceLog
 from netcheck.ports import PortMap
 from netcheck.report import IntentViolation
-from netcheck.transport.base import CommandResult, TransportError
+from netcheck.transport.base import CommandResult
 
 
 class _StubTransport:
@@ -30,14 +30,15 @@ def _shell(stdout: str, rc: int, stderr: str = "") -> LinuxShell:
 # ---- #1: a ping that never ran must not look like "no replies" ----
 
 
-def test_ping_that_did_not_run_raises() -> None:
-    with pytest.raises(TransportError, match="did not run"):
-        _shell("", 1, "Error: No such container: clab-x-h1").ping("10.0.20.13")
+def test_ping_that_did_not_run_is_a_result_with_the_reason() -> None:
+    r = _shell("", 1, "Error: No such container: clab-x-h1").ping("10.0.20.13")
+    assert not r.ran and r.sent == 0
+    assert r.error == "ping did not run (rc=1): Error: No such container: clab-x-h1"
 
 
-def test_ping_error_exit_code_raises() -> None:
-    with pytest.raises(TransportError, match="did not run"):
-        _shell("ping: sendmsg: Network is unreachable\n", 2).ping("10.0.20.13")
+def test_ping_error_exit_code_did_not_run() -> None:
+    r = _shell("ping: sendmsg: Network is unreachable\n", 2).ping("10.0.20.13")
+    assert not r.ran and "Network is unreachable" in r.error
 
 
 def test_ping_with_no_replies_is_a_result_not_an_error() -> None:
@@ -326,7 +327,8 @@ def test_link_states_reads_all_ports_in_one_call() -> None:
     links = LinuxLinks(T(), {"p1": "eth1", "p2": "eth2", "p3": "eth3"})  # type: ignore[arg-type]
     states = links.link_states(["p1", "p2", "p3"])
     assert calls == ["ip -j link show"]
-    assert states["p1"]["admin"] == "up" and states["p2"]["admin"] == "down"
+    assert states["p1"].admin_up and states["p1"].oper_up
+    assert not states["p2"].admin_up and not states["p2"].oper_up
     assert "p3" not in states  # missing in the container: reported as missing, not crashing
 
 

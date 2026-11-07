@@ -13,6 +13,7 @@ from netcheck.capabilities import (
     Bridge,
     CaptureHandle,
     Links,
+    LinkState,
     Ospf,
     OspfInterface,
     OspfNeighbor,
@@ -80,9 +81,9 @@ class FakeLinks(Links):
     def set_link(self, port: str, up: bool) -> None:
         self.admin[port] = up
 
-    def link_state(self, port: str) -> dict[str, str]:
+    def link_state(self, port: str) -> LinkState:
         up = self.admin.get(port, True)
-        return {"port": port, "admin": "up" if up else "down", "operstate": "UP" if up else "DOWN"}
+        return LinkState(port, f"eth{port[1:]}", up, up)
 
 
 class FakeShell(Shell):
@@ -121,6 +122,8 @@ class FakeShell(Shell):
         return CaptureHandle(self.name, port, "/tmp/x.pcap", "1")
 
     def stop_capture(self, handle: CaptureHandle, dest_dir: str) -> CaptureHandle:
+        if handle.stopped:
+            return handle
         handle.stopped = True
         handle.summary = [
             "IP 10.0.10.11 > 10.0.20.13: ICMP echo request",
@@ -307,7 +310,7 @@ def make_healthy(lab: Lab, parts: dict[str, Any]) -> None:
     r1_links = lab["r1"].links
 
     def r1_routes() -> dict[str, Route]:
-        primary_up = r1_links.link_state("p2")["admin"] == "up"
+        primary_up = r1_links.link_state("p2").admin_up
         hop = "10.0.12.1" if primary_up else "10.0.12.3"
         return {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", (hop,), True)}
 
