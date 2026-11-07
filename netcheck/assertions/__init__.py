@@ -19,7 +19,6 @@ from netcheck.assertions.l2 import (
     check_vlan_membership,
     describe_vlans,
     force_layer2_path,
-    host_attachment,
     isolation_probe_count,
     send_isolation_probes,
 )
@@ -49,7 +48,6 @@ __all__ = [
     "check_vlan_membership",
     "describe_vlans",
     "force_layer2_path",
-    "host_attachment",
     "isolation_probe_count",
     "send_isolation_probes",
     "start_capture",

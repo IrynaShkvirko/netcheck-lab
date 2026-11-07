@@ -21,7 +21,8 @@ from netcheck.backends.nvidia_air import (
     parse_nvue_routes,
 )
 from netcheck.capabilities import OspfNeighbor, PortVlans, Route
-from netcheck.intent import Intent, expected_state
+from netcheck.expected import Expected
+from netcheck.intent import Intent
 from netcheck.ports import PortMap
 from netcheck.render import frr_config
 from netcheck.transport.base import TransportError
@@ -75,19 +76,17 @@ def test_routes_keep_only_what_ospf_won(intent) -> None:  # type: ignore[no-unty
 
 
 def test_routes_match_the_intent_on_both_routers(intent) -> None:  # type: ignore[no-untyped-def]
-    for router, prefixes in expected_state(intent)["routes"].items():
+    for router, prefixes in Expected(intent).routes_by_router().items():
         ospf, _ = _ospf(intent, router)
-        assert sorted(ospf.routes()) == prefixes
+        assert set(ospf.routes()) == prefixes
 
 
 def test_bridge_membership_matches_the_intent(intent) -> None:  # type: ignore[no-untyped-def]
     t = FakeNvueTransport("sw1")
     bridge = NvueBridge(t, nvue_ports(intent, "sw1"))  # type: ignore[arg-type]
-    expected = {
-        p: PortVlans(v["mode"], tuple(v["vlans"]))
-        for p, v in expected_state(intent)["vlan_membership"]["sw1"].items()
-    }
-    assert bridge.vlan_membership() == expected  # br_default and eth0 are not ports
+    assert bridge.vlan_membership() == Expected(intent).vlan_membership(
+        "sw1"
+    )  # br_default and eth0 are not ports
 
 
 def test_bridge_port_defaults_and_unplanned_ports() -> None:

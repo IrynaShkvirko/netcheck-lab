@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from netcheck.intent import Intent, expected_state
+from netcheck.expected import Expected
+from netcheck.intent import Intent
 
 
 def port_name(logical: str, prefix: str) -> str:
@@ -178,5 +178,5 @@ def render(intent: Intent, images: dict[str, str], out_dir: Path, prefix: str = 
     topo_path.write_text(
         header + yaml.safe_dump(clab_topology(intent, images, prefix), sort_keys=False)
     )
-    (out_dir / "expected_state.json").write_text(json.dumps(expected_state(intent), indent=2))
+    (out_dir / "expected_state.json").write_text(Expected(intent).to_json())
     return topo_path

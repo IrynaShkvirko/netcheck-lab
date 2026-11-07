@@ -1,9 +1,11 @@
+import json
 from pathlib import Path
 
 import pytest
 import yaml
 
-from netcheck.intent import IntentError, expected_state, load_intent, validate
+from netcheck.expected import Expected
+from netcheck.intent import IntentError, load_intent, validate
 from netcheck.render import frr_config, port_name, render, switch_exec
 
 
@@ -14,8 +16,9 @@ def test_logical_ports_map_per_backend() -> None:
         port_name("eth3", "eth")
 
 
-def test_expected_state_from_intent(intent):  # type: ignore[no-untyped-def]
-    exp = expected_state(intent)
+def test_expected_state_json_from_intent(intent):  # type: ignore[no-untyped-def]
+    """The generated expected_state.json (ADR-0001), as a person reads it."""
+    exp = json.loads(Expected(intent).to_json())
     assert exp["routes"] == {"r1": ["10.0.30.0/24"], "r2": ["10.0.10.0/24"]}
     assert {n["neighbor"] for n in exp["ospf_neighbors"]["r1"]} == {"r2"}
     assert len(exp["ospf_neighbors"]["r1"]) == 2  # primary + backup

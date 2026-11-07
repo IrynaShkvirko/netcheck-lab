@@ -8,6 +8,10 @@ Tests that a lab network behaves as its intent says, on more than one backend.
 The description of what the network must do (`intent/lab.yaml`), and the single source of truth for topology, configuration and expected state. Identified by its digest.
 _Avoid_: spec, topology file
 
+**Expected state**:
+What the live network must look like if it follows the intent (VLANs per switch port, routes and adjacencies per router, where each host is attached), derived from the intent alone.
+_Avoid_: golden state, desired state
+
 **Logical port**:
 A device port as the intent names it (`p1`, `p2`; `p1.10` for a VLAN sub-interface), independent of any NOS. Each backend maps it to a real interface name.
 _Avoid_: interface name, ifname (those are the real, backend-specific names)

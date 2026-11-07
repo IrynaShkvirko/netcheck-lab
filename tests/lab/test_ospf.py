@@ -8,22 +8,21 @@ from netcheck.assertions import (
     assert_route_present,
     check_next_hop,
 )
-from netcheck.intent import advertising_router, peer_addresses
+from netcheck.expected import Adjacency
 from netcheck.lab import Lab
 from netcheck.steps import step
 
 pytestmark = pytest.mark.functional
 
 
-def test_ospf_adjacency_is_full(lab: Lab, ospf_adjacency: tuple[str, str, str, str]) -> None:
+def test_ospf_adjacency_is_full(lab: Lab, ospf_adjacency: Adjacency) -> None:
     """One OSPF adjacency from the intent reaches state Full, on its own link."""
-    router_name, neighbor_name, port, link_label = ospf_adjacency
+    adj = ospf_adjacency
+    router_name, neighbor_name, port = adj.router, adj.neighbor, adj.local_port
     router, neighbor = lab[router_name], lab[neighbor_name]
 
-    with step(
-        f"Look up the {link_label} link {router_name}:{port} -> {neighbor_name} in the intent"
-    ):
-        neighbor_id = lab.intent.nodes[neighbor_name].router_id
+    with step(f"Look up the {adj.link} link {router_name}:{port} -> {neighbor_name} in the intent"):
+        neighbor_id = adj.router_id
         link = lab.intent.link_at(router_name, port)
         assert neighbor_id, f"{neighbor_name} has no router_id in the intent"
         assert link.peer(router_name).node == neighbor_name, (
@@ -43,9 +42,9 @@ def test_ospf_route_is_learned(lab: Lab, ospf_route: tuple[str, str]) -> None:
     router = lab[router_name]
 
     with step(f"Find which router advertises {prefix} in the intent"):
-        origin_name = advertising_router(lab.intent, prefix, exclude=router_name)
+        origin_name = lab.expected.originator(prefix, exclude=router_name)
         assert origin_name in lab.devices, f"no router in the intent advertises {prefix}"
-        allowed_next_hops = peer_addresses(lab.intent, router_name, origin_name)
+        allowed_next_hops = lab.expected.next_hops(router_name, origin_name)
 
     with step(f"Check {router_name} has a Full OSPF adjacency with {origin_name}"):
         assert_ospf_neighbor_full(router, lab[origin_name])

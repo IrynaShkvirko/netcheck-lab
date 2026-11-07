@@ -25,7 +25,7 @@ def test_isolation_passes_and_cleans_up(fake) -> None:  # type: ignore[no-untype
 
 def test_vlan_membership_rejects_a_port_the_intent_omits() -> None:
     """A live port with no intent entry is drift, the same way an extra OSPF route is."""
-    expected = {"p1": {"mode": "access", "vlans": [10]}}
+    expected = {"p1": PortVlans("access", (10,))}
     live = {"p1": PortVlans("access", (10,)), "p9": PortVlans("access", (10,))}
     with pytest.raises(IntentViolation) as exc:
         check_vlan_membership("sw1", expected, live)

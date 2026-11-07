@@ -4,7 +4,6 @@ import pytest
 
 from netcheck.assertions import assert_route_uses
 from netcheck.convergence import measure_reconvergence
-from netcheck.intent import failover_plan
 from netcheck.lab import Lab
 from netcheck.steps import step
 
@@ -15,7 +14,7 @@ def test_primary_link_failure_reroutes_via_backup(lab: Lab) -> None:
     """When the primary link fails, traffic moves to the backup within the SLA."""
     with step("Find the primary and backup links and a traffic path in the intent"):
         try:
-            plan = failover_plan(lab.intent)
+            plan = lab.expected.failover()
         except LookupError as exc:
             pytest.skip(str(exc))
         # e.g. r1 fails over from 10.0.12.1 (primary) to 10.0.12.3 (backup); h1 -> h4
