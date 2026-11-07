@@ -146,6 +146,13 @@ class Timing:
             value, error = attempt()
         return value, clock() - start  # type: ignore[return-value]
 
+    def observe(self, name: str, value_s: float) -> Measurement:
+        """Record a measured value that has no SLA (for example a control-plane time
+        reported next to the data-plane one). Unlike `record`, `name` needs no threshold."""
+        m = Measurement(name, round(value_s, 3), None, False)
+        self.measurements.append(m)
+        return m
+
     def record(self, check: str, value_s: float) -> Measurement:
         """Record a measured value and enforce the SLA according to the mode."""
         sla = self.thresholds[check].sla

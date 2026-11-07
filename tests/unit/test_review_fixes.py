@@ -6,10 +6,9 @@ from dataclasses import replace
 
 import pytest
 
-from netcheck.assertions import assert_isolated
+from netcheck.assertions import assert_isolated, assert_route_uses
 from netcheck.backends.local import LinuxShell
 from netcheck.capabilities import PingResult, PortVlans, Route
-from netcheck.convergence import measure_reconvergence
 from netcheck.devicelog import DeviceLog
 from netcheck.ports import PortMap
 from netcheck.report import IntentViolation
@@ -60,17 +59,10 @@ def test_failover_requires_primary_path_before_failure(fake) -> None:  # type: i
         "10.0.30.0/24": Route("10.0.30.0/24", "ospf", ("10.0.12.3",), True)  # already on backup
     }
     with pytest.raises(IntentViolation) as exc:
-        measure_reconvergence(
-            check="reconverge_local_link",
-            src=lab["h1"],
-            dst=lab["h4"],
-            router=lab["r1"],
-            prefix="10.0.30.0/24",
-            expected_next_hop="10.0.12.3",
-            before_next_hop="10.0.12.1",
-            action=lambda: None,
-        )
-    assert exc.value.report.verdict.startswith("before the failure, r1 must route 10.0.30.0/24")
+        assert_route_uses(lab["r1"], "10.0.30.0/24", "10.0.12.1", why="before the failure, ")
+    assert (
+        exc.value.report.verdict == "before the failure, r1 must route 10.0.30.0/24 via 10.0.12.1"
+    )
 
 
 # ---- #2: a baseline is only taken from a freshly built lab ----

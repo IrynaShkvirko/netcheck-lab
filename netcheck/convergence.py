@@ -12,12 +12,12 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from netcheck.assertions.common import attempt, evidence, ospf_neighbor_lines
+from netcheck.assertions.common import attempt, evidence, fail, ospf_neighbor_lines
 from netcheck.capabilities import PingResult
 from netcheck.device import Device
 from netcheck.lab import current
-from netcheck.report import FailureReport, IntentViolation
-from netcheck.timing import Measurement, WaitTimeout
+from netcheck.report import FailureReport
+from netcheck.timing import WaitTimeout
 
 
 @dataclass
@@ -41,13 +41,13 @@ def measure_reconvergence(
     prefix: str,
     expected_next_hop: str,
     action: Callable[[], None],
-    before_next_hop: str | None = None,
-    enforce_sla: bool = True,
 ) -> Convergence:
     """Run `action` (the failure) while measuring both convergence numbers.
 
-    `before_next_hop` is the path traffic must use before the failure. Without that
-    check, a lab already on the backup path would "converge" in zero seconds.
+    Only measures. Check the starting path first (assert_route_uses with
+    why="before the failure, "), or a lab already on the backup path "converges" in zero
+    seconds; record the data-plane outage against its SLA as a step of its own
+    (lab.timing.record). The control-plane time is recorded here, with no SLA.
     """
     lab = current()
     th = lab.timing[check]
@@ -57,26 +57,6 @@ def measure_reconvergence(
     def next_hops() -> tuple[str, ...]:
         route = router.ospf.routes().get(prefix)
         return route.next_hops if route and route.installed else ()
-
-    if before_next_hop is not None:
-        try:
-            lab.timing.wait_until("route_installed", next_hops, lambda nh: before_next_hop in nh)
-        except WaitTimeout as exc:
-            report = FailureReport(
-                verdict=(
-                    f"before the failure, {router.name} must route {prefix} via {before_next_hop}"
-                ),
-                expected=f"next hop {before_next_hop}",
-                actual=exc.describe(f"next hops {exc.last!r}"),
-            )
-            report.add_evidence(
-                "diagnosis",
-                [
-                    "the failover would start from the wrong path, so its result would "
-                    "mean nothing (check OSPF costs)"
-                ],
-            )
-            raise IntentViolation(report) from exc
 
     token = src.shell.start_stream(dst_ip, interval=interval, deadline=th.timeout + 5)
     lab.cleanup.register(f"stop ping stream on {src.name}", lambda: _stop_quietly(src, token))
@@ -101,23 +81,20 @@ def measure_reconvergence(
         )
         if stream is not None:
             report.measurements["data_plane_outage"] = outage_seconds(stream, interval)
-        raise IntentViolation(report) from exc
+        fail(report)
 
     time.sleep(1.0)  # let the stream show recovery before stopping it
     stream = src.shell.stop_stream(token)
     if stream.received == 0:
-        raise IntentViolation(
+        fail(
             FailureReport(
                 verdict=f"traffic {src.name} -> {dst.name} must recover after the failure",
                 expected="replies after reconvergence",
                 actual="0 replies in the whole stream",
             )
         )
-    data_plane = outage_seconds(stream, interval)
-    if enforce_sla:  # False: the caller records it (and enforces the SLA) as its own step
-        lab.timing.record(check, data_plane)
-    lab.timing.measurements.append(Measurement(f"{check}_control_plane", round(cp, 3), None, False))
-    return Convergence(check, data_plane, round(cp, 3), stream)
+    lab.timing.observe(f"{check}_control_plane", cp)
+    return Convergence(check, outage_seconds(stream, interval), round(cp, 3), stream)
 
 
 def _stop_quietly(src: Device, token: str) -> None:
