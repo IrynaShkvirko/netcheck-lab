@@ -39,7 +39,7 @@ from netcheck.capabilities import (
 from netcheck.device import Device
 from netcheck.intent import Intent
 from netcheck.ports import PortMap
-from netcheck.transport.base import TransportError
+from netcheck.transport.base import ApiTransport, TransportError
 from netcheck.transport.nvue_rest import NvueRestTransport
 
 BRIDGE_DOMAIN = "br_default"
@@ -225,7 +225,7 @@ Change = tuple[str, str, Any]  # (method, path, body): PATCH merges, DELETE remo
 
 
 def apply_changes(
-    t: NvueRestTransport,
+    t: ApiTransport,
     changes: list[Change],
     *,
     timeout: float = 60.0,
@@ -266,7 +266,7 @@ def apply_changes(
 
 
 class _NvueBase:
-    def __init__(self, t: NvueRestTransport, port_map: PortMap) -> None:
+    def __init__(self, t: ApiTransport, port_map: PortMap) -> None:
         self.t = t
         self.port_map = port_map
 
@@ -334,7 +334,7 @@ class NvueLinks(_NvueBase, Links):
         return out
 
 
-def record_samples(t: NvueRestTransport, dest: Path) -> list[Path]:
+def record_samples(t: ApiTransport, dest: Path) -> list[Path]:
     """Save the responses the parsers read, from a real switch, as test fixtures:
     <dest>/<name>.<rev>.json. Run once against a DSX Air simulation, then point the unit
     tests at the captured files instead of the documentation-based samples."""
@@ -355,11 +355,11 @@ class NvueFactory(CapabilityFactory):
     bridge. Hosts (SSH via Air's OOB network) and revision snapshots are not built yet,
     so tests needing them are skipped (ADR-0001, ADR-0003 open questions)."""
 
-    def __init__(self, open_transport: Callable[[DeviceSpec], NvueRestTransport]) -> None:
+    def __init__(self, open_transport: Callable[[DeviceSpec], ApiTransport]) -> None:
         self.open_transport = open_transport
-        self._transports: dict[str, NvueRestTransport] = {}
+        self._transports: dict[str, ApiTransport] = {}
 
-    def _t(self, spec: DeviceSpec) -> NvueRestTransport:
+    def _t(self, spec: DeviceSpec) -> ApiTransport:
         if spec.name not in self._transports:
             self._transports[spec.name] = self.open_transport(spec)
         return self._transports[spec.name]
@@ -415,7 +415,7 @@ class NvidiaAirBackend(Backend):
             self._devices = assemble(self.intent, self.name, self.prefix, factory)
         return self._devices
 
-    def open_transport(self, spec: DeviceSpec) -> NvueRestTransport:
+    def open_transport(self, spec: DeviceSpec) -> ApiTransport:
         return NvueRestTransport(
             self.mgmt[spec.name],
             self.settings.get("nvue_user", "cumulus"),

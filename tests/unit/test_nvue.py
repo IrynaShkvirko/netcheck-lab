@@ -34,7 +34,7 @@ def _sample(device: str, name: str) -> Any:
 
 def _ospf(intent: Intent, device: str) -> tuple[NvueOspf, FakeNvueTransport]:
     t = FakeNvueTransport(device)
-    return NvueOspf(t, nvue_ports(intent, device)), t  # type: ignore[arg-type]
+    return NvueOspf(t, nvue_ports(intent, device)), t
 
 
 # ---- parsers: the same state the local backend sees on a healthy lab -----------------
@@ -79,7 +79,7 @@ def test_routes_match_the_intent_on_both_routers(intent) -> None:  # type: ignor
 
 def test_bridge_membership_matches_the_intent(intent) -> None:  # type: ignore[no-untyped-def]
     t = FakeNvueTransport("sw1")
-    bridge = NvueBridge(t, nvue_ports(intent, "sw1"))  # type: ignore[arg-type]
+    bridge = NvueBridge(t, nvue_ports(intent, "sw1"))
     assert bridge.vlan_membership() == Expected(intent).vlan_membership(
         "sw1"
     )  # br_default and eth0 are not ports
@@ -108,7 +108,7 @@ def test_bridge_port_defaults_and_unplanned_ports() -> None:
 
 def test_link_states_read_every_port_in_one_call(intent) -> None:  # type: ignore[no-untyped-def]
     t = FakeNvueTransport("r1")
-    links = NvueLinks(t, nvue_ports(intent, "r1"))  # type: ignore[arg-type]
+    links = NvueLinks(t, nvue_ports(intent, "r1"))
     states = links.link_states(["p1", "p2", "p3"])
     assert {p: (s.ifname, s.admin_up, s.oper_up) for p, s in states.items()} == {
         "p1": ("swp1", True, True),
@@ -143,7 +143,7 @@ def test_unknown_shapes_fail_loudly(parser, body) -> None:  # type: ignore[no-un
 
 def test_set_access_vlan_replaces_a_trunk_in_one_revision(intent) -> None:  # type: ignore[no-untyped-def]
     t = FakeNvueTransport("sw1")
-    NvueBridge(t, nvue_ports(intent, "sw1")).set_access_vlan("p4", 10)  # type: ignore[arg-type]
+    NvueBridge(t, nvue_ports(intent, "sw1")).set_access_vlan("p4", 10)
     assert t.changes == [
         ("DELETE", "interface/swp4/bridge/domain/br_default/vlan", None),
         ("PATCH", "interface/swp4/bridge/domain/br_default", {"access": 10}),
@@ -169,7 +169,7 @@ def test_ospf_area_change_and_removal(intent) -> None:  # type: ignore[no-untype
 
 def test_link_down_is_a_revision(intent) -> None:  # type: ignore[no-untyped-def]
     t = FakeNvueTransport("r1")
-    NvueLinks(t, nvue_ports(intent, "r1")).set_link("p2", False)  # type: ignore[arg-type]
+    NvueLinks(t, nvue_ports(intent, "r1")).set_link("p2", False)
     assert t.changes == [("PATCH", "interface/swp2/link", {"state": {"down": {}}})]
 
 
@@ -177,23 +177,23 @@ def test_failed_apply_raises() -> None:
     t = FakeNvueTransport("sw1")
     t.apply_state = "invalid"
     with pytest.raises(TransportError, match="failed to apply"):
-        apply_changes(t, [("PATCH", "interface/swp1", {})], sleep=lambda _: None)  # type: ignore[arg-type]
+        apply_changes(t, [("PATCH", "interface/swp1", {})], sleep=lambda _: None)
 
 
 def test_apply_that_never_finishes_times_out() -> None:
     t = FakeNvueTransport("sw1")
     t.apply_state = "applying"
     with pytest.raises(TransportError, match="not applied after"):
-        apply_changes(t, [], timeout=0, sleep=lambda _: None)  # type: ignore[arg-type]
+        apply_changes(t, [], timeout=0, sleep=lambda _: None)
 
 
 def test_rejected_change_raises_but_deleting_nothing_is_fine() -> None:
     t = FakeNvueTransport("sw1")
     t.status_for[("DELETE", "interface/swp1/x")] = 404  # nothing to delete: not an error
-    assert apply_changes(t, [("DELETE", "interface/swp1/x", None)]) == "1"  # type: ignore[arg-type]
+    assert apply_changes(t, [("DELETE", "interface/swp1/x", None)]) == "1"
     t.status_for[("PATCH", "interface/swp1")] = 400
     with pytest.raises(TransportError, match="HTTP 400"):
-        apply_changes(t, [("PATCH", "interface/swp1", {"bad": 1})])  # type: ignore[arg-type]
+        apply_changes(t, [("PATCH", "interface/swp1", {"bad": 1})])
 
 
 # ---- the real lab tests, on NVUE-shaped responses ------------------------------------

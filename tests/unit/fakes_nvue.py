@@ -5,15 +5,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from netcheck.assembly import DeviceSpec, assemble
 from netcheck.backends.nvidia_air import PATHS, NvueFactory
 from netcheck.intent import Intent
 from netcheck.lab import Lab
 from netcheck.ports import PortMap
-from netcheck.transport.base import ApiResult
-from netcheck.transport.nvue_rest import NvueRestTransport
+from netcheck.transport.base import ApiResult, ApiTransport
 
 SAMPLES = Path(__file__).parent / "fixtures" / "nvue"
 _NAMES = {path: name for name, path in PATHS.items()}
@@ -77,9 +76,9 @@ def use_nvue_devices(lab: Lab) -> dict[str, FakeNvueTransport]:
     capabilities. Returns the transports by device."""
     transports: dict[str, FakeNvueTransport] = {}
 
-    def open_transport(spec: DeviceSpec) -> NvueRestTransport:
+    def open_transport(spec: DeviceSpec) -> ApiTransport:
         transports[spec.name] = FakeNvueTransport(spec.name)
-        return cast(NvueRestTransport, transports[spec.name])
+        return transports[spec.name]
 
     devices = assemble(lab.intent, "nvidia", "swp", NvueFactory(open_transport))
     lab.devices.clear()

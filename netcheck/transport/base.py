@@ -6,8 +6,6 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from netcheck.devicelog import DeviceLog
-
 
 class TransportError(RuntimeError):
     """The device could not be reached or returned an error."""
@@ -56,15 +54,20 @@ class ApiResult:
 
 
 class CommandTransport(Protocol):
-    log: DeviceLog
+    """Runs shell commands on a device (local backend: `docker exec`). Every real
+    transport records each call in its device log (ADR-0002, ADR-0005)."""
 
     def run(
         self, cmd: str, *, stdin: str | None = None, timeout: float = 30.0
     ) -> CommandResult: ...
 
+    def copy_out(self, src: str, dest: str) -> None:
+        """Copy a file from the device to the local path `dest` (packet captures)."""
+        ...
+
 
 class ApiTransport(Protocol):
-    log: DeviceLog
+    """Calls a device's REST API (NVIDIA backend: NVUE). Real transports log every call."""
 
     def request(
         self, method: str, path: str, body: Any = None, params: dict[str, str] | None = None

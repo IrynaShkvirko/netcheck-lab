@@ -98,3 +98,12 @@ instead of the CapabilityMissing skip this ADR promises.
 - **`Shell.stop_capture` may be called twice**; the second call returns the handle
   unchanged (the cleanup registry stops every capture again as a safety net).
 
+
+## Revision (2026-11-07, transport seam)
+
+The two transport protocols are now what the adapters depend on: the local adapters take a
+`CommandTransport` (`run`, plus `copy_out` for packet captures), the NVUE adapters an
+`ApiTransport` (`request`). Neither protocol has a `log` attribute: recording every call in
+the device log is each real transport's job, set up when it is built. Both factories are
+given a function that opens a device's transport, so tests assemble the real adapters over
+`ScriptedTransport` (commands) or `FakeNvueTransport` (NVUE).
