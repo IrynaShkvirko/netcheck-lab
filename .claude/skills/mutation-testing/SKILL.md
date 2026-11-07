@@ -143,8 +143,10 @@ make mutate-lab GROUP=FrrOspf        # LinuxShell | FrrOspf | links-bridge | bac
 | `backend` | 79 | `LocalBackend` `is_running`, `environment`, `devices`, `open_transport`, `container` |
 | `all` | 320 | all of the above |
 
-Each mutant runs the lab tests that reach its function, so expect minutes per mutant, not
-seconds; start with one group. The cost per mutant has not been measured yet.
+Each mutant runs only the lab tests that reach its function. Measured on the first run
+(`FrrOspf`, Linux VM): 7 s per mutant on average, 32 s at most, plus one pass of the whole
+lab suite at the start to map tests to functions. That puts `all` at well under an hour;
+still start with one group.
 
 **How it is set up.** mutmut only reads the config in the directory it runs from, so the
 profile is the folder `mutation/lab/`: its own `pyproject.toml` (mutate only
@@ -177,7 +179,18 @@ one. Re-run every mutant killed only by the failover, reconvergence or isolation
 **Not here:** the NVIDIA backend, which cannot deploy a lab yet. Never run the lab profile
 in CI.
 
-**Lab baseline:** not measured yet. Fill in the score per group after the first run.
+**Lab baseline** (first run, 2026-11-07, Linux VM):
+
+| Group | Killed | Survived | No tests | Notes |
+|---|---|---|---|---|
+| `FrrOspf` | 19 | 0 | 27 | every reachable mutant killed |
+| `LinuxShell`, `links-bridge`, `backend` | not run yet | | | |
+
+The 27 no-tests mutants are two functions a green lab run never calls:
+`FrrOspf.lsdb_prefixes` (10), read only while diagnosing a missing route, and
+`FrrOspf.set_interface_area` (17), used only by the `missing-ospf-network` fault. Neither
+is an assertion gap: a passing suite has no reason to reach them. Record them as
+failure-path or fault-only code rather than writing lab tests to force them.
 
 ## Many survivors
 
