@@ -9,7 +9,7 @@ from pathlib import Path
 import yaml
 
 from netcheck.backends import Backend, get_backend
-from netcheck.backends.base import LabDegraded
+from netcheck.backends.base import LabDegraded, RestoreFailed, SnapshotMismatch
 from netcheck.faults import FAULTS
 from netcheck.intent import load_intent
 from netcheck.labstate import LabState
@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     backend = get_backend(args.backend, intent, ROOT)
     try:
         return _run(args, backend, LabState(ROOT))
-    except LabDegraded as exc:
+    except (LabDegraded, SnapshotMismatch, RestoreFailed) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

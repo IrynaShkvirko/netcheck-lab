@@ -1,0 +1,46 @@
+{
+  "eth0": {
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    }
+  },
+  "swp1": {
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    }
+  },
+  "swp2": {
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    }
+  },
+  "swp3": {
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    }
+  }
+}

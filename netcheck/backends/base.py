@@ -2,17 +2,39 @@
 
 from __future__ import annotations
 
+import json
+import secrets
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from netcheck.capabilities import Links, Snapshot
 from netcheck.device import Device
 from netcheck.intent import Intent
 from netcheck.labstate import LabState
 
+# Version of the snapshot file layout; older files are refused (ADR-0003).
+SNAPSHOT_FORMAT = 2
+
 
 class LabDegraded(RuntimeError):
     """The lab is running but not usable as deployed (e.g. links lost); redeploy needed."""
+
+
+class SnapshotMismatch(ValueError):
+    """The snapshot cannot be restored onto this lab: unknown ID, older file format,
+    another intent or another backend. Nothing was changed."""
+
+
+class RestoreFailed(RuntimeError):
+    """One or more devices could not be brought back to the snapshot."""
+
+    def __init__(self, snapshot_id: str, errors: dict[str, str]) -> None:
+        self.snapshot_id = snapshot_id
+        self.errors = errors
+        listing = "; ".join(f"{name}: {err}" for name, err in errors.items())
+        super().__init__(f"restore of {snapshot_id} failed on {len(errors)} device(s): {listing}")
 
 
 class Backend(ABC):
@@ -54,12 +76,91 @@ class Backend(ABC):
     @abstractmethod
     def devices(self) -> dict[str, Device]: ...
 
-    @abstractmethod
-    def snapshot(self, label: str) -> str:
-        """Save configuration and link state; return the snapshot ID."""
+    def missing_ports(self) -> list[str]:
+        """Intended ports that do not exist on their device, e.g. ["r1:p1 (eth1)"].
 
-    @abstractmethod
-    def restore(self, snapshot_id: str) -> None: ...
+        Empty means the lab is intact. A container lab loses its links when a container
+        restarts; such a lab must be redeployed, not restored.
+        """
+        missing = []
+        for name, dev in self.devices().items():
+            if not dev.has(Links):
+                continue
+            present = dev.links.link_states(list(dev.port_map))
+            missing += [
+                f"{name}:{lp} ({real})" for lp, real in dev.port_map.items() if lp not in present
+            ]
+        return missing
+
+    # snapshots (ADR-0003) ----------------------------------------------------
+    def snapshot(self, label: str) -> str:
+        """Save every device's state into one file; return the snapshot ID."""
+        snap_id = f"{label}-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
+        data: dict[str, Any] = {
+            "format": SNAPSHOT_FORMAT,
+            "id": snap_id,
+            "intent": self.intent.digest,
+            "backend": self.name,
+            "devices": {},
+            "not_covered": [],
+        }
+        for name, dev in self.devices().items():
+            if dev.has(Snapshot):
+                data["devices"][name] = dev.snapshot.take()
+            else:
+                data["not_covered"].append(name)
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        (self.snapshot_dir / f"{snap_id}.json").write_text(json.dumps(data, indent=2))
+        self.state.prune_snapshots()
+        return snap_id
+
+    def restore(self, snapshot_id: str) -> None:
+        """Bring every device back to the snapshot.
+
+        Raises SnapshotMismatch (nothing changed) if the snapshot is not from this lab,
+        LabDegraded if the lab must be redeployed, RestoreFailed listing every device
+        that did not come back.
+        """
+        data = self._load_snapshot(snapshot_id)
+        missing = self.missing_ports()
+        if missing:
+            raise LabDegraded(
+                f"cannot restore {snapshot_id}: lab links are gone ({', '.join(missing)}). "
+                "A container was probably restarted. Run `make lab-fresh`."
+            )
+        devices = self.devices()
+        errors: dict[str, str] = {}
+        for name, state in data["devices"].items():
+            try:
+                devices[name].snapshot.restore_to(state)
+            except Exception as exc:  # noqa: BLE001
+                errors[name] = f"{type(exc).__name__}: {exc}"
+        if errors:
+            raise RestoreFailed(snapshot_id, errors)
+
+    def _load_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        path = self.snapshot_dir / f"{snapshot_id}.json"
+        try:
+            data: dict[str, Any] = json.loads(path.read_text())
+        except FileNotFoundError:
+            raise SnapshotMismatch(f"no snapshot {snapshot_id} in {self.snapshot_dir}") from None
+        if data.get("format") != SNAPSHOT_FORMAT:
+            raise SnapshotMismatch(
+                f"snapshot {snapshot_id} has an older file format; "
+                "take a new baseline with `make lab-fresh`"
+            )
+        if data.get("backend") != self.name:
+            raise SnapshotMismatch(
+                f"snapshot {snapshot_id} was taken on backend '{data.get('backend')}', "
+                f"not '{self.name}'"
+            )
+        if data.get("intent") != self.intent.digest:
+            raise SnapshotMismatch(
+                f"snapshot {snapshot_id} was taken from intent {data.get('intent')}, "
+                f"but the lab is built from {self.intent.digest}; restore a snapshot of "
+                "this intent or redeploy with `make lab-fresh`"
+            )
+        return data
 
     @abstractmethod
     def environment(self) -> dict[str, str]:

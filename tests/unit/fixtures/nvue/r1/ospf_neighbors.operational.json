@@ -1,0 +1,34 @@
+{
+  "2.2.2.2": {
+    "interface": {
+      "swp2": {
+        "local-ip": {
+          "10.0.12.0": {
+            "neighbor-ip": "10.0.12.1",
+            "state": "full",
+            "role": "DROther",
+            "priority": 1,
+            "statistics": {
+              "state-changes": 5,
+              "ls-request-qlen": 0
+            }
+          }
+        }
+      },
+      "swp3": {
+        "local-ip": {
+          "10.0.12.2": {
+            "neighbor-ip": "10.0.12.3",
+            "state": "full",
+            "role": "DROther",
+            "priority": 1,
+            "statistics": {
+              "state-changes": 5,
+              "ls-request-qlen": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "eth0": {
+    "type": "eth",
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    }
+  },
+  "swp1": {
+    "type": "swp",
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    },
+    "bridge": {
+      "domain": {
+        "br_default": {
+          "access": 10
+        }
+      }
+    }
+  },
+  "swp2": {
+    "type": "swp",
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    },
+    "bridge": {
+      "domain": {
+        "br_default": {
+          "access": 10
+        }
+      }
+    }
+  },
+  "swp3": {
+    "type": "swp",
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    },
+    "bridge": {
+      "domain": {
+        "br_default": {
+          "access": 20
+        }
+      }
+    }
+  },
+  "swp4": {
+    "type": "swp",
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    },
+    "bridge": {
+      "domain": {
+        "br_default": {
+          "vlan": {
+            "10": {},
+            "20": {}
+          }
+        }
+      }
+    }
+  },
+  "br_default": {
+    "type": "bridge",
+    "link": {
+      "admin-status": "up",
+      "oper-status": "up",
+      "state": {
+        "up": {}
+      },
+      "mtu": 9216,
+      "speed": "1G"
+    }
+  }
+}

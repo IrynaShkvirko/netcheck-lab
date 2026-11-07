@@ -64,6 +64,28 @@ then re-read and verify. No restore runs when nothing changed, which is the comm
   containers.
 - **Snapshots are pruned** to the newest 50, never deleting the baseline.
 
+### Revision (2026-11-07, architecture review)
+
+The local backend's restore read FRR, bridge and route state through downcasts and ran raw
+`vtysh`, `bridge` and `ip` commands itself. Only the pure diff functions were tested, because
+the fake backend stubbed snapshot and restore. Restore also applied a snapshot taken from
+another intent without checking.
+
+- **Snapshot is a device capability** (`take()` / `restore_to(state)`), as ADR-0002 lists.
+  Each adapter owns capture, diff, apply and verify for its device; the local one restores
+  links, then bridge VLANs, then FRR config, then host routes. Devices are restored one by one.
+- **`Backend` holds the shared part:** the snapshot file, the checks below, pruning and the
+  degraded-lab check. A backend only supplies devices with a Snapshot capability; the fake
+  devices have one too, so plugin tests run the real snapshot code.
+- **A snapshot is restored only onto a lab like the one it was taken from.** The file records
+  `format: 2`, the intent digest and the backend name; any mismatch (or an unknown ID) raises
+  `SnapshotMismatch` before anything changes. The CLI exits 1, `pytest --snapshot` exits 4
+  (usage error). Snapshots from before format 2 are refused: run `make lab-fresh` once.
+- **All devices are tried.** A restore collects every device's error and raises one
+  `RestoreFailed` listing them; the session still stops with exit code 3.
+- **Gaps are recorded.** A device without a Snapshot capability is listed under `not_covered`
+  in the file instead of blocking the snapshot.
+
 ## Consequences
 
 - Registry first, snapshot second: the registry undoes test actions in reverse

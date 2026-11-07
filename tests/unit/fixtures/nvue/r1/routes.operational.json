@@ -1,0 +1,132 @@
+{
+  "10.0.10.0/24": {
+    "protocol": {
+      "connected": {
+        "entry-index": {
+          "1": {
+            "distance": 0,
+            "metric": 0,
+            "flags": {
+              "selected": {},
+              "installed": {},
+              "fib-selected": {}
+            },
+            "via": {
+              "swp1.10": {
+                "type": "interface"
+              }
+            }
+          }
+        }
+      },
+      "ospf": {
+        "entry-index": {
+          "1": {
+            "distance": 110,
+            "metric": 10,
+            "flags": {},
+            "via": {
+              "swp1.10": {
+                "type": "interface"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "10.0.12.0/31": {
+    "protocol": {
+      "connected": {
+        "entry-index": {
+          "1": {
+            "distance": 0,
+            "metric": 0,
+            "flags": {
+              "selected": {},
+              "installed": {},
+              "fib-selected": {}
+            },
+            "via": {
+              "swp2": {
+                "type": "interface"
+              }
+            }
+          }
+        }
+      },
+      "ospf": {
+        "entry-index": {
+          "1": {
+            "distance": 110,
+            "metric": 10,
+            "flags": {},
+            "via": {
+              "swp2": {
+                "type": "interface"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "10.0.12.2/31": {
+    "protocol": {
+      "connected": {
+        "entry-index": {
+          "1": {
+            "distance": 0,
+            "metric": 0,
+            "flags": {
+              "selected": {},
+              "installed": {},
+              "fib-selected": {}
+            },
+            "via": {
+              "swp3": {
+                "type": "interface"
+              }
+            }
+          }
+        }
+      },
+      "ospf": {
+        "entry-index": {
+          "1": {
+            "distance": 110,
+            "metric": 10,
+            "flags": {},
+            "via": {
+              "swp3": {
+                "type": "interface"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "10.0.30.0/24": {
+    "protocol": {
+      "ospf": {
+        "entry-index": {
+          "1": {
+            "distance": 110,
+            "metric": 20,
+            "flags": {
+              "selected": {},
+              "installed": {},
+              "fib-selected": {}
+            },
+            "via": {
+              "10.0.12.1": {
+                "type": "ipv4-address"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -94,7 +94,7 @@ def test_fresh_deploy_takes_new_baseline_and_clears_faults(fake) -> None:  # typ
     backend.state.set_baseline("baseline-original")
     backend.state.add_fault("wrong-vlan", "sw1:p3 moved")
     deployed, baseline = backend.up(fresh=True)
-    assert deployed and baseline.startswith("baseline-fake")
+    assert deployed and baseline.startswith("baseline-") and baseline != "baseline-original"
     assert backend.state.baseline() == baseline
     assert backend.state.active_faults() == []
 
@@ -138,7 +138,7 @@ def lab(tmp_path_factory):
     art = Path("art").resolve()  # fixed per pytester dir, so a second run sees the first's files
     art.mkdir(exist_ok=True)
     the_lab, _ = build_fake_lab(load_intent({intent!r}), art)
-    the_lab.backend.restore_error = {restore_error}
+    the_lab["r1"].snapshot.fail_with = {restore_error}
     token = set_current(the_lab)
     yield the_lab
     token.var.reset(token)
@@ -257,27 +257,6 @@ def test_same_area_accepts_both_frr_formats() -> None:
 
     assert same_area("0", 0) and same_area("0.0.0.0", 0) and same_area("0.0.1.0", 256)
     assert not same_area(None, 0) and not same_area("1", 0)
-
-
-# ---- #8: host routes are part of snapshots ----
-
-
-def test_host_route_diff_restores_default_and_removes_extra() -> None:
-    from netcheck.backends.local import host_route_diff
-
-    wanted = [
-        {"dst": "default", "gateway": "10.0.10.1", "dev": "eth1"},
-        {"dst": "10.0.10.0/24", "dev": "eth1", "protocol": "kernel", "scope": "link"},
-    ]
-    live = [
-        {"dst": "10.0.10.0/24", "dev": "eth1", "protocol": "kernel", "scope": "link"},
-        {"dst": "10.0.20.13", "dev": "eth1", "scope": "link"},  # left behind by a test
-    ]
-    assert host_route_diff(wanted, live) == [
-        "ip route del 10.0.20.13 dev eth1",
-        "ip route replace default via 10.0.10.1 dev eth1",
-    ]
-    assert host_route_diff(wanted, wanted) == []
 
 
 # ---- #9: intent validation reports every problem, up front ----

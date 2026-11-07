@@ -1,0 +1,24 @@
+{
+  "type": "vlan-aware",
+  "untagged": 1,
+  "vlan": {
+    "10": {
+      "multicast": {
+        "snooping": {
+          "querier": {
+            "source-ip": "0.0.0.0"
+          }
+        }
+      }
+    },
+    "20": {
+      "multicast": {
+        "snooping": {
+          "querier": {
+            "source-ip": "0.0.0.0"
+          }
+        }
+      }
+    }
+  }
+}
