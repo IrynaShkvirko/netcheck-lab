@@ -86,7 +86,24 @@ another intent without checking.
 - **Gaps are recorded.** A device without a Snapshot capability is listed under `not_covered`
   in the file instead of blocking the snapshot.
 
-## Consequences
+### Revision (2026-11-07, lab lifecycle)
+
+`Backend.up()` held the baseline rule for the CLI and pytest alike, but the other
+cross-process rules lived in the CLI only. Restoring the baseline cleared the fault ledger
+from `netcheck restore`, not from `pytest --snapshot <baseline>`, so the run header kept
+warning about faults that were gone. `netcheck render` read `backends.yaml` itself and
+always used the local images and the `eth` prefix.
+
+- **`Backend.reset(snapshot_id=None)`** restores the baseline by default and clears the
+  fault ledger whenever the restored snapshot is the baseline, whoever calls it. Another
+  snapshot leaves the ledger alone: it may have been taken with a fault applied.
+- **`Backend.inject_fault(name)`** runs the fault and records it in the ledger.
+- **`Backend.render()`** generates the lab with the backend's own prefix and images; the
+  local backend's deploy uses it, the NVIDIA backend says it is not implemented yet.
+- The CLI and the pytest session fixture only call these. The CLI uses `backend.state`;
+  the pytest run header keeps a read-only `LabState`, since it prints before any backend
+  exists.
+
 
 - Registry first, snapshot second: the registry undoes test actions in reverse
   order, then the snapshot restore corrects anything still drifted.

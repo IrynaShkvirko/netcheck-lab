@@ -548,8 +548,11 @@ class LocalBackend(Backend):
         ).stdout.split()
         return len(out) == len(self.intent.nodes)
 
+    def render(self) -> Path:
+        return render(self.intent, self.settings["images"], self.build_dir, self.prefix)
+
     def deploy(self, fresh: bool = False) -> bool:
-        render(self.intent, self.settings["images"], self.build_dir, self.prefix)
+        self.render()
         if self.is_running() and not fresh:
             built_from = self.state.deployed_intent()
             missing = self.missing_ports()

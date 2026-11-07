@@ -78,7 +78,7 @@ def lab(request: pytest.FixtureRequest) -> Generator[Lab, None, None]:
     deployed, _ = backend.up(fresh=cfg.getoption("--fresh-lab"))
     if cfg.getoption("--snapshot"):
         try:
-            backend.restore(cfg.getoption("--snapshot"))
+            backend.reset(cfg.getoption("--snapshot"))  # the baseline also clears faults
         except SnapshotMismatch as exc:
             # a wrong ID, not a broken lab: stop before any test, as a usage error
             pytest.exit(f"--snapshot: {exc}", returncode=pytest.ExitCode.USAGE_ERROR)

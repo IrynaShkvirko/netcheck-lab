@@ -63,6 +63,36 @@ class Backend(ABC):
             self.state.clear_faults()
         return deployed, baseline
 
+    def reset(self, snapshot_id: str | None = None) -> str:
+        """Restore a snapshot, the baseline by default; returns the restored ID.
+
+        Restoring the baseline clears the fault ledger, whoever asks (CLI or pytest):
+        the baseline has no faults in it. Another snapshot may have been taken with a
+        fault applied, so restoring it leaves the ledger as it is.
+        """
+        baseline = self.state.baseline()
+        target = snapshot_id or baseline
+        if target is None:
+            raise SnapshotMismatch("no baseline yet; run `make lab-up` first")
+        self.restore(target)
+        if target == baseline:
+            self.state.clear_faults()
+        return target
+
+    def inject_fault(self, name: str) -> str:
+        """Break one intent on purpose and record it in the fault ledger; returns what
+        was changed. `reset()` to the baseline removes it again."""
+        from netcheck.faults import FAULTS  # faults drive a Backend: import late
+
+        description = FAULTS[name](self)
+        self.state.add_fault(name, description)
+        return description
+
+    def render(self) -> Path:
+        """Generate the lab from the intent (topology, configs, expected state); returns
+        the topology file."""
+        raise NotImplementedError(f"the {self.name} backend cannot generate a topology yet")
+
     @abstractmethod
     def deploy(self, fresh: bool = False) -> bool:
         """Bring the lab up. Returns True if this call deployed it (False = reused)."""

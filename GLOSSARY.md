@@ -40,6 +40,10 @@ _Avoid_: stage, phase
 A step whose failed check is recorded while the test continues; the test fails at the end with every soft failure in one report.
 _Avoid_: non-fatal assertion, soft assert
 
+**Fault**:
+A deliberate change that breaks exactly one intent, injected for a demo or to try a failure by hand. Faults stay active until the baseline is restored.
+_Avoid_: bug, error (those are unintended)
+
 **Degraded lab**:
 A running lab that no longer matches its deployment (for example, links lost after a container restart), so it must be redeployed rather than restored.
 _Avoid_: broken lab
