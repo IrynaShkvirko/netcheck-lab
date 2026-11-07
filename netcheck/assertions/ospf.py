@@ -6,7 +6,13 @@ import ipaddress
 from collections.abc import Collection, Mapping
 from functools import partial
 
-from netcheck.assertions.common import attempt, evidence, fail, ospf_neighbor_lines
+from netcheck.assertions.common import (
+    attempt,
+    evidence,
+    fail,
+    neighbor_line,
+    ospf_neighbor_lines,
+)
 from netcheck.capabilities import OspfInterface, OspfNeighbor, Route
 from netcheck.device import Device
 from netcheck.lab import Lab, current
@@ -95,11 +101,68 @@ def link_drift(lab: Lab, router: Device) -> list[DiffLine]:
     ]
 
 
-def _diagnose(
-    lab: Lab, report: FailureReport, router: str, prefix: str, has_full: bool, lsdb: set[str]
-) -> str:
-    """Why `router` lacks `prefix`: no adjacency, not advertised, or not installed.
-    Adds the config drift that points at the cause."""
+class _RouterLook:
+    """One router's OSPF neighbors and LSDB, read at most once per failure report.
+
+    Reading adds the evidence (neighbor lines; 'evidence unavailable' if the router
+    did not answer). A failed read is kept as its error text, so a diagnosis can say
+    the router was unreadable instead of guessing from an empty table.
+    """
+
+    def __init__(self, report: FailureReport, router: Device) -> None:
+        self.report, self.router = report, router
+        self._neighbors: list[OspfNeighbor] | None = None
+        self._lsdb: set[str] | None = None
+        self.neighbor_error = self.lsdb_error = ""
+        self._read_neighbors = self._read_lsdb = False
+
+    def neighbors(self) -> list[OspfNeighbor] | None:
+        if not self._read_neighbors:
+            self._read_neighbors = True
+            name = self.router.name
+            try:
+                self._neighbors = self.router.ospf.neighbors()
+            except Exception as exc:  # noqa: BLE001 - evidence is best effort
+                self.neighbor_error = f"{type(exc).__name__}: {exc}"
+                self.report.add_evidence(
+                    "evidence unavailable", [f"{name} neighbors: {self.neighbor_error}"]
+                )
+            else:
+                lines = [neighbor_line(n) for n in self._neighbors]
+                self.report.add_evidence(f"{name} neighbors", lines or ["(none)"])
+        return self._neighbors
+
+    def has_full(self) -> bool | None:
+        """Any Full adjacency; None if the neighbor table could not be read."""
+        nbrs = self.neighbors()
+        return None if nbrs is None else any(n.state == "Full" for n in nbrs)
+
+    def lsdb(self) -> set[str] | None:
+        if not self._read_lsdb:
+            self._read_lsdb = True
+            try:
+                self._lsdb = self.router.ospf.lsdb_prefixes()
+            except Exception as exc:  # noqa: BLE001 - evidence is best effort
+                self.lsdb_error = f"{type(exc).__name__}: {exc}"
+                self.report.add_evidence(
+                    "evidence unavailable", [f"{self.router.name} LSDB: {self.lsdb_error}"]
+                )
+        return self._lsdb
+
+
+def diagnose_missing_route(lab: Lab, look: _RouterLook, prefix: str) -> str:
+    """Why `look.router` lacks `prefix`: unreadable, no adjacency, not advertised, or
+    not installed. Adds the evidence (neighbors, LSDB) and the config drift that points
+    at the cause to the report; returns the diagnosis line."""
+    report, router = look.report, look.router.name
+    has_full = look.has_full()
+    lsdb = look.lsdb()
+    if lsdb is not None:
+        report.add_evidence(
+            f"{router} LSDB", [f"{prefix} {'present' if prefix in lsdb else 'absent'}"]
+        )
+    if has_full is None:
+        return f"{router}: could not read its OSPF neighbors ({look.neighbor_error})"
     if not has_full:
         report.drift += attempt(
             report,
@@ -108,6 +171,8 @@ def _diagnose(
             list[DiffLine](),
         )
         return f"{router}: no Full adjacency, so it learns nothing"
+    if lsdb is None:
+        return f"{router}: could not read its LSDB ({look.lsdb_error})"
     origin = lab.expected.originator(prefix, exclude=router)
     if prefix not in lsdb:
         if origin in lab.devices:
@@ -152,9 +217,8 @@ def assert_ospf_neighbor_full(r1: Device, r2: Device, port: str | None = None) -
             expected="state Full",
             actual=exc.describe(f"state {exc.last}"),
         )
-        for r in (r1, r2):
-            evidence(report, f"{r.name} neighbors", partial(ospf_neighbor_lines, r))
-        neighbors = attempt(report, f"{r1.name} neighbors", r1.ospf.neighbors, list[OspfNeighbor]())
+        neighbors = _RouterLook(report, r1).neighbors() or []  # one read: evidence + diagnosis
+        evidence(report, f"{r2.name} neighbors", partial(ospf_neighbor_lines, r2))
         others = [n.port for n in neighbors if n.router_id == rid and n.state == "Full"]
         if port and others:
             report.add_evidence(
@@ -192,21 +256,8 @@ def assert_route_present(router: Device, prefix: str) -> Route:
             expected=f"{prefix} installed in {router.name} routing table",
             actual=exc.describe("route absent"),
         )
-        neighbors = attempt(
-            report, f"{router.name} neighbors", router.ospf.neighbors, list[OspfNeighbor]()
-        )
-        report.add_evidence(
-            f"{router.name} neighbors",
-            [f"{n.router_id} {n.state} via {n.port}" for n in neighbors] or ["(none)"],
-        )
-        lsdb = attempt(report, f"{router.name} LSDB", router.ospf.lsdb_prefixes, set[str]())
-        report.add_evidence(
-            f"{router.name} LSDB", [f"{prefix} {'present' if prefix in lsdb else 'absent'}"]
-        )
-        has_full = any(n.state == "Full" for n in neighbors)
-        report.add_evidence(
-            "diagnosis", [_diagnose(lab, report, router.name, prefix, has_full, lsdb)]
-        )
+        diagnosis = diagnose_missing_route(lab, _RouterLook(report, router), prefix)
+        report.add_evidence("diagnosis", [diagnosis])
         fail(report)
     lab.timing.record("route_installed", elapsed)
     assert route is not None
@@ -337,18 +388,11 @@ def _routes_drift_report(
             for p in ps
         ],
     )
-    neighbors = {
-        r: attempt(report, f"{r} neighbors", lab[r].ospf.neighbors, list[OspfNeighbor]())
-        for r in routers
-    }
-    for r in routers:
-        report.add_evidence(
-            f"{r} neighbors",
-            [f"{n.router_id} {n.state} via {n.port}" for n in neighbors[r]] or ["(none)"],
-        )
-    has_full = {r: any(n.state == "Full" for n in neighbors[r]) for r in routers}
+    looks = {r: _RouterLook(report, lab[r]) for r in routers}
+    has_full = {r: looks[r].has_full() for r in routers}  # reads every router's neighbors
     diagnosis: list[str] = []
-    if missing and not any(has_full.values()):
+    # "no adjacency anywhere" only when every neighbor table was read and none is Full
+    if missing and all(f is False for f in has_full.values()):
         diagnosis.append(
             "no OSPF adjacency between the routers on any link: they exchange no routes"
         )
@@ -363,8 +407,7 @@ def _routes_drift_report(
             diagnosis.append("OSPF link settings match the intent: check link state (make smoke)")
     else:
         for r, ps in sorted(missing.items()):
-            lsdb = attempt(report, f"{r} LSDB", lab[r].ospf.lsdb_prefixes, set[str]())
-            diagnosis += [_diagnose(lab, report, r, p, has_full[r], lsdb) for p in ps]
+            diagnosis += [diagnose_missing_route(lab, looks[r], p) for p in ps]
     if extra:
         diagnosis.append(
             "unexpected routes: a router advertises a prefix the intent does not list "

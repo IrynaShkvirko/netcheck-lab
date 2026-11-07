@@ -234,3 +234,76 @@ def test_changed_cost_and_missing_gateway_address_are_drift(fake) -> None:  # ty
         "10.0.10.1/24",
         "none",
     )
+
+
+# ---- one "why is this route missing" diagnosis ------------------------------------
+
+
+def _unreadable(*_: object) -> object:
+    from netcheck.transport.base import TransportError
+
+    raise TransportError("r1: docker exec failed")
+
+
+def test_unreadable_neighbor_table_is_not_called_no_adjacency(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    monkeypatch.setattr(parts["ospf_r1"], "neighbors", _unreadable)
+    with pytest.raises(IntentViolation) as exc:
+        assert_route_present(lab["r1"], "10.0.30.0/24")
+    (diagnosis,) = exc.value.report.evidence["diagnosis"]
+    assert diagnosis == (
+        "r1: could not read its OSPF neighbors (TransportError: r1: docker exec failed)"
+    )
+    assert "no Full adjacency" not in diagnosis
+
+
+def test_drift_report_reads_each_router_once_and_shows_its_lsdb(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    r1, r2 = parts["ospf_r1"], parts["ospf_r2"]
+    r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2")]
+    r2.nbrs = [OspfNeighbor("1.1.1.1", "Full", "p1")]
+    r1.lsdb = {"10.0.30.0/24"}
+    calls = {"neighbors": 0, "lsdb": 0}
+
+    def counted(name: str, fn):  # type: ignore[no-untyped-def]
+        def wrapper():  # type: ignore[no-untyped-def]
+            calls[name] += 1
+            return fn()
+
+        return wrapper
+
+    monkeypatch.setattr(r1, "neighbors", counted("neighbors", r1.neighbors))
+    monkeypatch.setattr(r1, "lsdb_prefixes", counted("lsdb", r1.lsdb_prefixes))
+    # r1 is missing two routes: reads happen once all the same
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent({"r1": ["10.0.30.0/24", "10.0.99.0/24"], "r2": []})
+    report = exc.value.report
+    assert calls == {"neighbors": 1, "lsdb": 1}
+    assert report.evidence["r1 LSDB"] == ["10.0.30.0/24 present", "10.0.99.0/24 absent"]
+    assert report.evidence["r1 neighbors"] == ["2.2.2.2 Full via p2"]
+
+
+def test_neighbor_check_reads_the_table_once(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.timing import WaitTimeout
+
+    lab, parts = fake
+    r1 = parts["ospf_r1"]
+    r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2")]
+    calls = {"n": 0}
+    real = r1.neighbors
+
+    def counted():  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        return real()
+
+    def timed_out(check, probe, ok, **_):  # type: ignore[no-untyped-def]
+        raise WaitTimeout(check, 0.0, "absent")  # skip polling: count only the report's reads
+
+    monkeypatch.setattr(r1, "neighbors", counted)
+    monkeypatch.setattr(lab.timing, "wait_until", timed_out)
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_neighbor_full(lab["r1"], lab["r2"], port="p3")
+    assert calls["n"] == 1  # evidence and the "only p3 is down" diagnosis share one read
+    report = exc.value.report
+    assert report.evidence["r1 neighbors"] == ["2.2.2.2 Full via p2"]
+    assert "only p3 is down" in report.evidence["diagnosis"][0]
