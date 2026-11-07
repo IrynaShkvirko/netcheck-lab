@@ -7,6 +7,7 @@ from typing import cast
 
 from netcheck.capabilities import Bridge, Links, Ospf, Shell, Snapshot
 from netcheck.devicelog import DeviceLog
+from netcheck.ports import PortMap
 
 
 class CapabilityMissing(LookupError):
@@ -23,7 +24,7 @@ class Device:
     backend: str
     log: DeviceLog
     capabilities: dict[type, object] = field(default_factory=dict)
-    port_map: dict[str, str] = field(default_factory=dict)  # logical -> backend name
+    port_map: PortMap = field(default_factory=PortMap)  # logical -> backend name
     version: str = "unknown"
 
     def cap(self, kind: type) -> object:
@@ -58,12 +59,6 @@ class Device:
     @property
     def snapshot(self) -> Snapshot:
         return cast(Snapshot, self.cap(Snapshot))
-
-    def logical_port(self, real: str) -> str:
-        for logical, name in self.port_map.items():
-            if name == real:
-                return logical
-        return real
 
     def __repr__(self) -> str:
         return f"Device({self.name}, {self.role}, {self.backend})"

@@ -10,6 +10,7 @@ from netcheck.assertions import (
     check_vlan_membership,
 )
 from netcheck.capabilities import OspfNeighbor, PortVlans, Route
+from netcheck.ports import PortMap
 from netcheck.report import FailureReport, IntentViolation
 
 
@@ -111,7 +112,7 @@ def test_parse_frr_interfaces_normalizes_settings() -> None:
         " ip ospf dead-interval 4\n ip ospf hello-interval 1\n"
         " ip ospf network point-to-point\nexit\n!\nrouter ospf\n ospf router-id 1.1.1.1\n"
     )
-    s = parse_frr_interfaces(cfg, {"eth1": "p1", "eth2": "p2"})
+    s = parse_frr_interfaces(cfg, PortMap({"p1": "eth1", "p2": "eth2"}))
     assert s["p1.10"].passive and s["p1.10"].addresses == ("10.0.10.1/24",)
     assert (s["p2"].area, s["p2"].cost, s["p2"].hello_interval, s["p2"].dead_interval) == (
         "0.0.0.0",

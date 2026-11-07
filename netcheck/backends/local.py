@@ -9,9 +9,11 @@ import secrets
 import shlex
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
 from netcheck.backends.base import Backend
 from netcheck.capabilities import (
     Bridge,
@@ -27,8 +29,8 @@ from netcheck.capabilities import (
     Snapshot,
 )
 from netcheck.device import Device
-from netcheck.devicelog import DeviceLog
-from netcheck.render import BRIDGE, port_name, render
+from netcheck.ports import PortMap
+from netcheck.render import BRIDGE, render
 from netcheck.transport.base import CommandResult, TransportError
 from netcheck.transport.docker_exec import DockerExecTransport
 
@@ -47,13 +49,13 @@ def _state(raw: str) -> str:
     return raw.split("/")[0] if raw else "unknown"
 
 
-def parse_frr_neighbors(data: dict[str, Any], to_logical: dict[str, str]) -> list[OspfNeighbor]:
+def parse_frr_neighbors(data: dict[str, Any], ports: PortMap) -> list[OspfNeighbor]:
     out = []
     for rid, entries in (data.get("neighbors") or {}).items():
         for e in entries:
             state = e.get("nbrState") or e.get("state") or e.get("converged") or ""
             iface = str(e.get("ifaceName") or e.get("interfaceName") or "").split(":")[0]
-            out.append(OspfNeighbor(rid, _state(state), to_logical.get(iface, iface)))
+            out.append(OspfNeighbor(rid, _state(state), ports.logical(iface)))
     return out
 
 
@@ -72,7 +74,7 @@ def parse_frr_routes(data: dict[str, Any]) -> dict[str, Route]:
 
 
 def parse_bridge_vlans(
-    data: list[dict[str, Any]], to_logical: dict[str, str], bridges: tuple[str, ...] = (BRIDGE,)
+    data: list[dict[str, Any]], ports: PortMap, bridges: tuple[str, ...] = (BRIDGE,)
 ) -> dict[str, PortVlans]:
     """`bridge -j vlan show` -> {port: PortVlans}.
 
@@ -85,7 +87,7 @@ def parse_bridge_vlans(
         ifname = entry.get("ifname", "")
         if not ifname or ifname in bridges:
             continue
-        port = to_logical.get(ifname, ifname)
+        port = ports.logical(ifname)
         vlans = entry.get("vlans", [])
         vids = tuple(sorted(int(v["vlan"]) for v in vlans))
         if not vids:
@@ -149,25 +151,14 @@ def frr_config_diff(wanted: str, live: str) -> list[list[str]]:
     return [s for s in steps if s]
 
 
-def _logical_iface(ifname: str, to_logical: dict[str, str]) -> str:
-    """eth2 -> p2; eth1.10 -> p1.10 (VLAN sub-interface keeps its VLAN suffix)."""
-    base, dot, vid = ifname.partition(".")
-    return to_logical.get(base, base) + (f".{vid}" if dot else "")
-
-
-def _real_iface(name: str, port_map: dict[str, str]) -> str:
-    base, dot, vid = name.partition(".")
-    return port_map.get(base, base) + (f".{vid}" if dot else "")
-
-
-def parse_frr_interfaces(config: str, to_logical: dict[str, str]) -> dict[str, OspfInterface]:
+def parse_frr_interfaces(config: str, ports: PortMap) -> dict[str, OspfInterface]:
     """OSPF settings per logical interface, from FRR running-config. The only place
     that reads FRR interface config text (assertions use the normalized result)."""
     out: dict[str, OspfInterface] = {}
     for section, lines in frr_sections(config).items():
         if not section.startswith("interface "):
             continue
-        name = _logical_iface(section.split()[1], to_logical)
+        name = ports.logical(section.split()[1])
         fields: dict[str, Any] = {"addresses": []}
         for ln in lines:
             words = ln.split()
@@ -222,10 +213,9 @@ def host_route_diff(wanted: list[dict[str, Any]], live: list[dict[str, Any]]) ->
 
 
 class _Base:
-    def __init__(self, transport: DockerExecTransport, port_map: dict[str, str]) -> None:
+    def __init__(self, transport: DockerExecTransport, port_map: PortMap) -> None:
         self.t = transport
         self.port_map = port_map
-        self.to_logical = {v: k for k, v in port_map.items()}
 
     def real(self, logical: str) -> str:
         return self.port_map[logical]
@@ -237,7 +227,7 @@ class _Base:
 class FrrOspf(_Base, Ospf):
     def neighbors(self) -> list[OspfNeighbor]:
         data = self.run("vtysh -c 'show ip ospf neighbor json'").check().json()
-        return parse_frr_neighbors(data, self.to_logical)
+        return parse_frr_neighbors(data, self.port_map)
 
     def routes(self) -> dict[str, Route]:
         return parse_frr_routes(self.run("vtysh -c 'show ip route ospf json'").check().json())
@@ -258,10 +248,10 @@ class FrrOspf(_Base, Ospf):
         return self.run("vtysh -c 'show running-config'").check().stdout
 
     def interface_settings(self) -> dict[str, OspfInterface]:
-        return parse_frr_interfaces(self.running_config(), self.to_logical)
+        return parse_frr_interfaces(self.running_config(), self.port_map)
 
     def set_interface_area(self, port: str, area: int | None) -> None:
-        ifname = _real_iface(port, self.port_map)
+        ifname = self.port_map.real(port)
         if area is None:
             current = self.interface_settings().get(port)
             if current is None or current.area is None:
@@ -275,7 +265,7 @@ class FrrOspf(_Base, Ospf):
 
 class LinuxBridge(_Base, Bridge):
     def vlan_membership(self) -> dict[str, PortVlans]:
-        return parse_bridge_vlans(self.run("bridge -j vlan show").check().json(), self.to_logical)
+        return parse_bridge_vlans(self.run("bridge -j vlan show").check().json(), self.port_map)
 
     def set_access_vlan(self, port: str, vlan: int) -> None:
         self.set_port_vlans(port, PortVlans("access", (vlan,)))
@@ -317,9 +307,7 @@ def _link_dict(port: str, info: dict[str, Any]) -> dict[str, str]:
 
 
 class LinuxShell(_Base, Shell):
-    def __init__(
-        self, transport: DockerExecTransport, port_map: dict[str, str], device: str
-    ) -> None:
+    def __init__(self, transport: DockerExecTransport, port_map: PortMap, device: str) -> None:
         super().__init__(transport, port_map)
         self.device = device
 
@@ -488,6 +476,50 @@ class LocalSnapshot(Snapshot):
 # ---- backend -------------------------------------------------------------
 
 
+class LocalFactory(CapabilityFactory):
+    """Adapters of the local backend: Linux links and shell, FRR, Linux bridge, all over
+    `docker exec` into the node's container. Switches get a shell too (captures)."""
+
+    def __init__(self, container: Callable[[str], str]) -> None:
+        self.container = container
+        self._transports: dict[str, DockerExecTransport] = {}
+        self._links: dict[str, LinuxLinks] = {}
+        self._ospf: dict[str, FrrOspf] = {}
+        self._bridge: dict[str, LinuxBridge] = {}
+        self._shell: dict[str, LinuxShell] = {}
+
+    def _t(self, spec: DeviceSpec) -> DockerExecTransport:
+        if spec.name not in self._transports:
+            self._transports[spec.name] = DockerExecTransport(self.container(spec.name), spec.log)
+        return self._transports[spec.name]
+
+    def links(self, spec: DeviceSpec) -> Links:
+        self._links[spec.name] = LinuxLinks(self._t(spec), spec.ports)
+        return self._links[spec.name]
+
+    def ospf(self, spec: DeviceSpec) -> Ospf:
+        self._ospf[spec.name] = FrrOspf(self._t(spec), spec.ports)
+        return self._ospf[spec.name]
+
+    def bridge(self, spec: DeviceSpec) -> Bridge:
+        self._bridge[spec.name] = LinuxBridge(self._t(spec), spec.ports)
+        return self._bridge[spec.name]
+
+    def shell(self, spec: DeviceSpec) -> Shell:
+        self._shell[spec.name] = LinuxShell(self._t(spec), spec.ports, spec.name)
+        return self._shell[spec.name]
+
+    def snapshot(self, spec: DeviceSpec, built: dict[type, object]) -> Snapshot:
+        n = spec.name
+        return LocalSnapshot(
+            n,
+            self._links[n],
+            self._bridge.get(n),
+            self._ospf.get(n),
+            self._shell.get(n) if spec.role == "host" else None,  # host routes: hosts only
+        )
+
+
 class LocalBackend(Backend):
     name = "local"
     timing_profile = "local"
@@ -545,35 +577,9 @@ class LocalBackend(Backend):
     # devices
     def devices(self) -> dict[str, Device]:
         if self._devices is None:
-            self._devices = {
-                name: self._build(name, node.role) for name, node in self.intent.nodes.items()
-            }
+            factory = LocalFactory(self.container)
+            self._devices = assemble(self.intent, self.name, self.prefix, factory)
         return self._devices
-
-    def _build(self, name: str, role: str) -> Device:
-        log = DeviceLog(name)
-        t = DockerExecTransport(self.container(name), log)
-        ports = {
-            ep.port: port_name(ep.port, self.prefix)
-            for lk in self.intent.links_of(name)
-            for ep in (lk.a, lk.b)
-            if ep.node == name
-        }
-        links = LinuxLinks(t, ports)
-        ospf = FrrOspf(t, ports) if role == "router" else None
-        bridge = LinuxBridge(t, ports) if role == "switch" else None
-        shell = LinuxShell(t, ports, name) if role in ("host", "switch") else None
-        caps: dict[type, object] = {Links: links}
-        if ospf is not None:
-            caps[Ospf] = ospf
-        if bridge is not None:
-            caps[Bridge] = bridge
-        if shell is not None:
-            caps[Shell] = shell
-        caps[Snapshot] = LocalSnapshot(name, links, bridge, ospf, shell if role == "host" else None)
-        return Device(
-            name=name, role=role, backend=self.name, log=log, capabilities=caps, port_map=ports
-        )
 
     def environment(self) -> dict[str, str]:
         env = {

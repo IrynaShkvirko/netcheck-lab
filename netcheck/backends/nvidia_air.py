@@ -24,6 +24,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
 from netcheck.backends.base import Backend
 from netcheck.capabilities import (
     Bridge,
@@ -35,9 +36,8 @@ from netcheck.capabilities import (
     Route,
 )
 from netcheck.device import Device
-from netcheck.devicelog import DeviceLog
 from netcheck.intent import Intent
-from netcheck.render import port_name
+from netcheck.ports import PortMap
 from netcheck.transport.base import TransportError
 from netcheck.transport.nvue_rest import NvueRestTransport
 
@@ -63,17 +63,6 @@ def _dict(value: Any, where: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise NvueShapeError(f"{where}: expected an object, got {type(value).__name__}")
     return value
-
-
-def _logical(ifname: str, to_logical: dict[str, str]) -> str:
-    """swp2 -> p2; swp1.10 -> p1.10. An interface the intent does not map keeps its name."""
-    base, dot, vid = ifname.partition(".")
-    return to_logical.get(base, base) + (f".{vid}" if dot else "")
-
-
-def _real(name: str, port_map: dict[str, str]) -> str:
-    base, dot, vid = name.partition(".")
-    return port_map.get(base, base) + (f".{vid}" if dot else "")
 
 
 def _enum(value: Any) -> str:
@@ -104,7 +93,7 @@ def _vlan_ids(spec: Any) -> tuple[int, ...]:
 _NVUE_STATES = {"full": "Full", "2-way": "2-Way", "twoway": "2-Way", "init": "Init"}
 
 
-def parse_nvue_neighbors(data: Any, to_logical: dict[str, str]) -> list[OspfNeighbor]:
+def parse_nvue_neighbors(data: Any, ports: PortMap) -> list[OspfNeighbor]:
     """GET vrf/default/router/ospf/neighbor (rev=operational):
     {"<router-id>": {"interface": {"swp51": {"local-ip": {"10.0.1.0": {"state": "full"}}}}}}
     One OspfNeighbor per neighbor and interface; state spelled like FRR ("Full")."""
@@ -117,7 +106,7 @@ def parse_nvue_neighbors(data: Any, to_logical: dict[str, str]) -> list[OspfNeig
             for entry in local_ips.values():
                 raw = str(_dict(entry, "local-ip entry").get("state", "unknown"))
                 state = _NVUE_STATES.get(raw.lower(), raw.capitalize())
-                out.append(OspfNeighbor(rid, state, _logical(ifname, to_logical)))
+                out.append(OspfNeighbor(rid, state, ports.logical(ifname)))
     return out
 
 
@@ -155,9 +144,7 @@ def parse_nvue_routes(data: Any, protocol: str | None = None) -> dict[str, Route
     return dict(sorted(out.items()))
 
 
-def parse_nvue_ospf_interfaces(
-    interfaces: Any, to_logical: dict[str, str]
-) -> dict[str, OspfInterface]:
+def parse_nvue_ospf_interfaces(interfaces: Any, ports: PortMap) -> dict[str, OspfInterface]:
     """GET interface (rev=applied): OSPF settings as configured, like the FRR running
     config on the local backend. Per interface:
     {"ip": {"address": {"10.0.12.0/31": {}}}, "router": {"ospf": {"area": "0",
@@ -170,7 +157,7 @@ def parse_nvue_ospf_interfaces(
         ospf = _dict(_dict(cfg.get("router"), f"{ifname} router").get("ospf"), f"{ifname} ospf")
         if not ospf:
             continue
-        name = _logical(ifname, to_logical)
+        name = ports.logical(ifname)
         timers = _dict(ospf.get("timers"), f"{ifname} ospf timers")
         addresses = _dict(_dict(cfg.get("ip"), f"{ifname} ip").get("address"), "address")
 
@@ -192,7 +179,7 @@ def parse_nvue_ospf_interfaces(
 
 
 def parse_nvue_bridge(
-    interfaces: Any, domain: Any, to_logical: dict[str, str], name: str = BRIDGE_DOMAIN
+    interfaces: Any, domain: Any, ports: PortMap, name: str = BRIDGE_DOMAIN
 ) -> dict[str, PortVlans]:
     """GET interface and bridge/domain/br_default (rev=operational) -> {port: PortVlans}.
 
@@ -210,7 +197,7 @@ def parse_nvue_bridge(
         if membership is None:
             continue
         membership = _dict(membership, f"{ifname} {name}")
-        port = _logical(ifname, to_logical)
+        port = ports.logical(ifname)
         if membership.get("access") not in (None, "", {}):
             out[port] = PortVlans("access", (int(_enum(membership["access"])),))
             continue
@@ -279,10 +266,9 @@ def apply_changes(
 
 
 class _NvueBase:
-    def __init__(self, t: NvueRestTransport, port_map: dict[str, str]) -> None:
+    def __init__(self, t: NvueRestTransport, port_map: PortMap) -> None:
         self.t = t
         self.port_map = port_map
-        self.to_logical = {v: k for k, v in port_map.items()}
 
     def get(self, path: str, rev: str = "operational") -> Any:
         res = self.t.request("GET", path, params={"rev": rev})
@@ -296,7 +282,7 @@ class _NvueBase:
 
 class NvueOspf(_NvueBase, Ospf):
     def neighbors(self) -> list[OspfNeighbor]:
-        return parse_nvue_neighbors(self.get(PATHS["ospf_neighbors"]), self.to_logical)
+        return parse_nvue_neighbors(self.get(PATHS["ospf_neighbors"]), self.port_map)
 
     def routes(self) -> dict[str, Route]:
         return parse_nvue_routes(self.get(PATHS["routes"]), protocol="ospf")
@@ -306,10 +292,10 @@ class NvueOspf(_NvueBase, Ospf):
         raise NotImplementedError("NVUE LSDB path not mapped yet")
 
     def interface_settings(self) -> dict[str, OspfInterface]:
-        return parse_nvue_ospf_interfaces(self.get(PATHS["interfaces"], "applied"), self.to_logical)
+        return parse_nvue_ospf_interfaces(self.get(PATHS["interfaces"], "applied"), self.port_map)
 
     def set_interface_area(self, port: str, area: int | None) -> None:
-        path = f"interface/{_real(port, self.port_map)}/router/ospf"
+        path = f"interface/{self.port_map.real(port)}/router/ospf"
         if area is None:
             self.apply([("DELETE", f"{path}/area", None)])
         else:
@@ -319,7 +305,7 @@ class NvueOspf(_NvueBase, Ospf):
 class NvueBridge(_NvueBase, Bridge):
     def vlan_membership(self) -> dict[str, PortVlans]:
         return parse_nvue_bridge(
-            self.get(PATHS["interfaces"]), self.get(PATHS["bridge_domain"]), self.to_logical
+            self.get(PATHS["interfaces"]), self.get(PATHS["bridge_domain"]), self.port_map
         )
 
     def set_access_vlan(self, port: str, vlan: int) -> None:
@@ -364,6 +350,30 @@ def record_samples(t: NvueRestTransport, dest: Path) -> list[Path]:
     return written
 
 
+class NvueFactory(CapabilityFactory):
+    """Adapters of the NVIDIA backend: NVUE REST for router and switch links, OSPF and the
+    bridge. Hosts (SSH via Air's OOB network) and revision snapshots are not built yet,
+    so tests needing them are skipped (ADR-0001, ADR-0003 open questions)."""
+
+    def __init__(self, open_transport: Callable[[DeviceSpec], NvueRestTransport]) -> None:
+        self.open_transport = open_transport
+        self._transports: dict[str, NvueRestTransport] = {}
+
+    def _t(self, spec: DeviceSpec) -> NvueRestTransport:
+        if spec.name not in self._transports:
+            self._transports[spec.name] = self.open_transport(spec)
+        return self._transports[spec.name]
+
+    def links(self, spec: DeviceSpec) -> Links | None:
+        return None if spec.role == "host" else NvueLinks(self._t(spec), spec.ports)
+
+    def ospf(self, spec: DeviceSpec) -> Ospf:
+        return NvueOspf(self._t(spec), spec.ports)
+
+    def bridge(self, spec: DeviceSpec) -> Bridge:
+        return NvueBridge(self._t(spec), spec.ports)
+
+
 class NvidiaAirBackend(Backend):
     name = "nvidia"
     timing_profile = "nvidia"
@@ -395,32 +405,19 @@ class NvidiaAirBackend(Backend):
 
     def devices(self) -> dict[str, Device]:
         if self._devices is None:
-            self._devices = {}
-            for name, node in self.intent.nodes.items():
-                if node.role == "host":
-                    continue  # hosts are reached over SSH via Air's OOB network (TODO)
-                log = DeviceLog(name)
-                t = NvueRestTransport(
-                    self.mgmt[name],
-                    self.settings.get("nvue_user", "cumulus"),
-                    self.password,
-                    log,
-                    port=self.settings.get("nvue_port", 8765),
-                    verify_tls=self.settings.get("ca_bundle")
-                    or self.settings.get("verify_tls", True),
-                )
-                ports = {
-                    ep.port: port_name(ep.port, self.prefix)
-                    for lk in self.intent.links_of(name)
-                    for ep in (lk.a, lk.b)
-                    if ep.node == name
-                }
-                caps: dict[type, object] = {Links: NvueLinks(t, ports)}
-                caps[Ospf if node.role == "router" else Bridge] = (
-                    NvueOspf(t, ports) if node.role == "router" else NvueBridge(t, ports)
-                )
-                self._devices[name] = Device(name, node.role, self.name, log, caps, ports)
+            factory = NvueFactory(self.open_transport)
+            self._devices = assemble(self.intent, self.name, self.prefix, factory)
         return self._devices
+
+    def open_transport(self, spec: DeviceSpec) -> NvueRestTransport:
+        return NvueRestTransport(
+            self.mgmt[spec.name],
+            self.settings.get("nvue_user", "cumulus"),
+            self.password,
+            spec.log,
+            port=self.settings.get("nvue_port", 8765),
+            verify_tls=self.settings.get("ca_bundle") or self.settings.get("verify_tls", True),
+        )
 
     def snapshot(self, label: str) -> str:
         """NVUE: the currently applied revision is the snapshot (ADR-0003)."""
