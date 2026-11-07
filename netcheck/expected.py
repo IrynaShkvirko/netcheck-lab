@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from netcheck.capabilities import PortVlans
+from netcheck.capabilities import OspfInterface, PortVlans
 from netcheck.intent import Intent, Link
 
 
@@ -34,17 +34,6 @@ class Adjacency:
     router_id: str  # the neighbor's
     local_port: str
     link: str  # link label, or "<port>-<port>"
-
-
-@dataclass(frozen=True)
-class AdvertisingInterface:
-    """A router interface that must carry `address` and be in OSPF: a routed port (p3)
-    or a VLAN gateway sub-interface (p1.10)."""
-
-    name: str  # logical interface
-    port: str  # logical port
-    vlan: int | None
-    address: str
 
 
 @dataclass(frozen=True)
@@ -141,24 +130,48 @@ class Expected:
     def links_between(self, a: str, b: str) -> list[Link]:
         return [lk for lk in self.intent.links if {lk.a.node, lk.b.node} == {a, b}]
 
-    def advertising_interfaces(self, router: str, prefix: str) -> list[AdvertisingInterface]:
-        """The interfaces of `router` that put `prefix` into OSPF: a routed port in that
-        network, or the gateway sub-interface of a VLAN with that network."""
-        out = []
+    def ospf_interfaces(self, router: str) -> dict[str, OspfInterface]:
+        """The OSPF interfaces `router` must have, as a healthy router reports them, by
+        logical name: routed ports (p2) and VLAN gateway sub-interfaces (p1.10).
+        Passive interfaces carry no timers or network type; cost only where the link
+        sets one. In link order, which is also the order render writes them."""
+        out: dict[str, OspfInterface] = {}
+        if router not in self._routers:
+            return out
+        o = self.intent.ospf
+        area = str(o.area)
         for lk in self.intent.links_of(router):
             ep = lk.endpoint(router)
-            if ep.ip and _network(ep.ip) == prefix:
-                out.append(AdvertisingInterface(ep.port, ep.port, None, ep.ip))
-        for vid, vlan in self.intent.vlans.items():
-            if vlan.gateway_node != router or not vlan.gateway_ip:
+            if lk.mode == "trunk":
+                for vid in lk.vlans:
+                    vlan = self.intent.vlans[vid]
+                    if vlan.gateway_node == router and vlan.gateway_ip:
+                        name = f"{ep.port}.{vid}"
+                        out[name] = OspfInterface(name, (vlan.gateway_ip,), area, passive=True)
                 continue
-            if _network(vlan.gateway_ip) != prefix:
+            if not ep.ip:
                 continue
-            for lk in self.intent.links_of(router):
-                if lk.mode == "trunk" and vid in lk.vlans:
-                    port = lk.endpoint(router).port
-                    out.append(AdvertisingInterface(f"{port}.{vid}", port, vid, vlan.gateway_ip))
+            if lk.ospf_passive:
+                out[ep.port] = OspfInterface(ep.port, (ep.ip,), area, passive=True)
+            else:
+                out[ep.port] = OspfInterface(
+                    ep.port,
+                    (ep.ip,),
+                    area,
+                    hello_interval=o.hello_interval,
+                    dead_interval=o.dead_interval,
+                    cost=lk.ospf_cost,
+                    network=o.network,
+                )
         return out
+
+    def advertising_interfaces(self, router: str, prefix: str) -> list[OspfInterface]:
+        """The interfaces of `router` that put `prefix` into OSPF."""
+        return [
+            i
+            for i in self.ospf_interfaces(router).values()
+            if any(_network(a) == prefix for a in i.addresses)
+        ]
 
     # ---- hosts ------------------------------------------------------------------------
     def attachment(self, host: str) -> Attachment | None:
@@ -235,14 +248,9 @@ class Expected:
         return json.dumps(self.to_dict(), indent=2)
 
     def _ospf_prefixes(self) -> dict[str, set[str]]:
-        """Prefixes each router originates into OSPF."""
-        out: dict[str, set[str]] = {r: set() for r in self._routers}
-        for lk in self.intent.links:
-            if lk.routed:
-                for ep in (lk.a, lk.b):
-                    if ep.node in out and ep.ip:
-                        out[ep.node].add(_network(ep.ip))
-        for vlan in self.intent.vlans.values():
-            if vlan.gateway_node and vlan.gateway_ip:
-                out[vlan.gateway_node].add(_network(vlan.gateway_ip))
-        return out
+        """Prefixes each router originates into OSPF: the networks of its intended
+        OSPF interfaces."""
+        return {
+            r: {_network(a) for i in self.ospf_interfaces(r).values() for a in i.addresses}
+            for r in self._routers
+        }

@@ -1,5 +1,7 @@
 """Assertions collect discriminating evidence; reports carry all eight parts (ADR-0005)."""
 
+from dataclasses import replace
+
 import pytest
 
 from netcheck.assertions import (
@@ -56,14 +58,15 @@ def test_missing_ospf_network_is_diagnosed_as_not_advertised(fake) -> None:  # t
     r1, r2 = parts["ospf_r1"], parts["ospf_r2"]
     r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2"), OspfNeighbor("2.2.2.2", "Full", "p3")]
     r1.rib = {}  # 10.0.30.0/24 missing
-    r2.config = "interface eth3\n ip address 10.0.30.1/24\n!\ninterface eth1\n ip ospf area 0\n!\n"
+    r2.interfaces = lab.expected.ospf_interfaces("r2")
+    r2.interfaces["p3"] = replace(r2.interfaces["p3"], area=None)  # LAN taken out of OSPF
     with pytest.raises(IntentViolation) as exc:
         assert_route_present(lab["r1"], "10.0.30.0/24")
     report = exc.value.report
     assert report.verdict == "r1 must learn 10.0.30.0/24 via OSPF from r2"
     assert any("not advertising" in ln for ln in report.evidence["diagnosis"])
     (drift,) = report.drift
-    assert drift.where == "r2:p3 (eth3)" and drift.actual == "not in OSPF"
+    assert drift.where == "r2:p3 (eth3) OSPF area" and drift.actual == "not in OSPF"
 
 
 def test_route_present_passes(fake) -> None:  # type: ignore[no-untyped-def]
@@ -137,17 +140,6 @@ def test_adjacency_is_checked_per_link(fake) -> None:  # type: ignore[no-untyped
     assert list(k for k in report.evidence if "link" in k) == ["r1:p3 link (backup)"]
 
 
-def _frr(hello: int, *ifaces: str) -> str:
-    """Router config in FRR running-config format for the given interfaces."""
-    parts = []
-    for ifname in ifaces:
-        parts.append(
-            f"interface {ifname}\n ip ospf area 0\n ip ospf dead-interval 4\n"
-            f" ip ospf hello-interval {hello}\n ip ospf network point-to-point\nexit\n!"
-        )
-    return "\n".join(parts) + "\n"
-
-
 R1_RIB = {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", ("10.0.12.1",), True)}
 R2_RIB = {"10.0.10.0/24": Route("10.0.10.0/24", "ospf", ("10.0.12.0",), True)}
 
@@ -177,8 +169,12 @@ def test_routes_match_intent_diagnoses_no_adjacency(fake) -> None:  # type: igno
     """Both routers lose each other's prefix: no adjacency on any link, and the
     report points at the OSPF setting that differs from the intent."""
     lab, parts = fake
-    parts["ospf_r1"].config = _frr(1, "eth2", "eth3")
-    parts["ospf_r2"].config = _frr(5, "eth1", "eth2")  # hello mismatch on both links
+    r1, r2 = parts["ospf_r1"], parts["ospf_r2"]
+    r1.interfaces = lab.expected.ospf_interfaces("r1")
+    r2.interfaces = {
+        name: replace(i, hello_interval=5) if not i.passive else i  # hello mismatch, both links
+        for name, i in lab.expected.ospf_interfaces("r2").items()
+    }
     with pytest.raises(IntentViolation) as exc:
         assert_ospf_routes_match_intent()
     report = exc.value.report
@@ -201,7 +197,8 @@ def test_routes_match_intent_diagnoses_not_advertising(fake) -> None:  # type: i
     r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2"), OspfNeighbor("2.2.2.2", "Full", "p3")]
     r2.nbrs = [OspfNeighbor("1.1.1.1", "Full", "p1"), OspfNeighbor("1.1.1.1", "Full", "p2")]
     r2.rib = R2_RIB  # r2 is fine; r1 is missing r2's LAN
-    r2.config = "interface eth3\n ip address 10.0.30.1/24\nexit\n!\n"  # no 'ip ospf area 0'
+    r2.interfaces = lab.expected.ospf_interfaces("r2")
+    r2.interfaces["p3"] = replace(r2.interfaces["p3"], area=None)  # no 'ip ospf area 0'
     with pytest.raises(IntentViolation) as exc:
         assert_ospf_routes_match_intent()
     report = exc.value.report
@@ -209,4 +206,31 @@ def test_routes_match_intent_diagnoses_not_advertising(fake) -> None:  # type: i
         "r1: adjacency Full, but r2 is not advertising 10.0.30.0/24"
     ]
     (drift,) = report.drift
-    assert drift.where == "r2:p3 (eth3)" and drift.actual == "not in OSPF"
+    assert drift.where == "r2:p3 (eth3) OSPF area" and drift.actual == "not in OSPF"
+
+
+# ---- one comparison rule for OSPF interfaces --------------------------------------
+
+
+def test_area_written_as_dotted_quad_is_not_drift(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions.ospf import ospf_interface_drift
+
+    lab, _ = fake
+    want = lab.expected.ospf_interfaces("r2")["p3"]
+    assert ospf_interface_drift("r2:p3", want, replace(want, area="0.0.0.0")) == []
+
+
+def test_changed_cost_and_missing_gateway_address_are_drift(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions.ospf import ospf_interface_drift
+
+    lab, _ = fake
+    core = lab.expected.ospf_interfaces("r1")["p2"]
+    (cost,) = ospf_interface_drift("r1:p2", core, replace(core, cost=100))
+    assert (cost.where, cost.expected, cost.actual) == ("r1:p2 cost", "10", "100")
+    gw = lab.expected.ospf_interfaces("r1")["p1.10"]
+    (addr,) = ospf_interface_drift("r1:p1.10", gw, replace(gw, addresses=()))
+    assert (addr.where, addr.expected, addr.actual) == (
+        "r1:p1.10 addresses",
+        "10.0.10.1/24",
+        "none",
+    )

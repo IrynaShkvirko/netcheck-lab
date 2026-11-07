@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 
-from netcheck.backends.local import parse_frr_interfaces
 from netcheck.backends.nvidia_air import (
     NvueBridge,
     NvueLinks,
@@ -24,7 +23,6 @@ from netcheck.capabilities import OspfNeighbor, PortVlans, Route
 from netcheck.expected import Expected
 from netcheck.intent import Intent
 from netcheck.ports import PortMap
-from netcheck.render import frr_config
 from netcheck.transport.base import TransportError
 
 from .fakes_nvue import SAMPLES, FakeNvueTransport, nvue_ports
@@ -42,15 +40,13 @@ def _ospf(intent: Intent, device: str) -> tuple[NvueOspf, FakeNvueTransport]:
 # ---- parsers: the same state the local backend sees on a healthy lab -----------------
 
 
-def test_ospf_interface_settings_match_the_frr_config_of_the_same_intent(intent) -> None:  # type: ignore[no-untyped-def]
-    """Cross-backend contract: the NVUE parser and the FRR parser must normalize the
-    same intent to identical OspfInterface values, or the lab tests would behave
-    differently per backend."""
+def test_ospf_interface_settings_match_the_intended_interfaces(intent) -> None:  # type: ignore[no-untyped-def]
+    """Cross-backend contract: the NVUE parser reports the intended OSPF interfaces
+    exactly as Expected states them (the FRR side is checked by the round-trip test in
+    test_expected), or the lab tests would behave differently per backend."""
     for router in ("r1", "r2"):
         ospf, _ = _ospf(intent, router)
-        ports = nvue_ports(intent, router)
-        from_frr = parse_frr_interfaces(frr_config(intent, router, "swp"), ports)
-        assert ospf.interface_settings() == from_frr, router
+        assert ospf.interface_settings() == Expected(intent).ospf_interfaces(router), router
 
 
 def test_neighbors_are_per_link_with_frr_spelling(intent) -> None:  # type: ignore[no-untyped-def]

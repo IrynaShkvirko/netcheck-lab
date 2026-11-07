@@ -26,54 +26,63 @@ def same_area(live: str | None, wanted: int) -> bool:
         return live.isdigit() and int(live) == wanted
 
 
-def interface_drift(lab: Lab, router: Device, prefix: str) -> list[DiffLine]:
-    """Is each interface that should advertise `prefix` on `router` in OSPF?"""
-    settings = router.ospf.interface_settings()
-    area = lab.intent.ospf.area
+def ospf_interface_drift(
+    where: str, want: OspfInterface, live: OspfInterface | None
+) -> list[DiffLine]:
+    """The fields of a live OSPF interface that differ from the intended one; mismatches
+    only. Area is compared as a number (FRR may show 0 as '0.0.0.0'), addresses as a set."""
+    if live is None:
+        return [DiffLine(f"{where} OSPF interface", "configured", "absent")]
+
+    def shown(value: object) -> str:
+        return "not set" if value is None else str(value)
+
     drift = []
-    for want in lab.expected.advertising_interfaces(router.name, prefix):
-        s = settings.get(want.name)
-        real = router.port_map.real(want.name)
-        in_area = f"OSPF area {s.area}" if s and s.area is not None else "not in OSPF"
-        if want.vlan is None:
-            drift.append(
-                DiffLine(f"{router.name}:{want.name} ({real})", f"OSPF area {area}", in_area)
-            )
-            continue
-        has_ip = bool(s and want.address in s.addresses)
+    if not same_area(live.area, int(want.area or 0)):
+        got = "not in OSPF" if live.area is None else live.area
+        drift.append(DiffLine(f"{where} OSPF area", shown(want.area), got))
+    if set(live.addresses) != set(want.addresses):
         drift.append(
             DiffLine(
-                f"{router.name}:{want.name} ({real}, VLAN {want.vlan} gateway)",
-                f"address {want.address}, OSPF area {area}",
-                ", ".join(
-                    [
-                        f"address {want.address}" if has_ip else "no gateway address",
-                        f"OSPF area {area}" if s and same_area(s.area, area) else "not in OSPF",
-                    ]
-                ),
+                f"{where} addresses",
+                ", ".join(want.addresses) or "none",
+                ", ".join(live.addresses) or "none",
             )
         )
+    for what, w, g in (
+        ("passive", want.passive, live.passive),
+        ("hello interval", want.hello_interval, live.hello_interval),
+        ("dead interval", want.dead_interval, live.dead_interval),
+        ("network type", want.network, live.network),
+        ("cost", want.cost, live.cost),
+    ):
+        if w != g:
+            drift.append(DiffLine(f"{where} {what}", shown(w), shown(g)))
     return drift
+
+
+def interface_drift(lab: Lab, router: Device, prefix: str) -> list[DiffLine]:
+    """How the interfaces that should advertise `prefix` on `router` differ from the intent."""
+    settings = router.ospf.interface_settings()
+    return [
+        line
+        for want in lab.expected.advertising_interfaces(router.name, prefix)
+        for line in ospf_interface_drift(
+            f"{router.name}:{want.name} ({router.port_map.real(want.name)})",
+            want,
+            settings.get(want.name),
+        )
+    ]
 
 
 def port_drift(lab: Lab, router: Device, port: str, live: OspfInterface | None) -> list[DiffLine]:
-    """Area, hello and dead interval of one router link vs the intent; mismatches only."""
-    o = lab.intent.ospf
-    s = live or OspfInterface(port)
-    lk = lab.intent.link_at(router.name, port)
+    """OSPF settings of one router interface that differ from the intent."""
+    want = lab.expected.ospf_interfaces(router.name).get(port)
+    if want is None:
+        return []
+    lk = lab.intent.link_at(router.name, port.partition(".")[0])
     label = f"{router.name}:{port}" + (f" ({lk.label})" if lk.label else "")
-    drift = []
-    if not same_area(s.area, o.area):
-        drift.append(DiffLine(f"{label} OSPF area", str(o.area), s.area or "not set"))
-    for what, want, got in (
-        ("hello interval", o.hello_interval, s.hello_interval),
-        ("dead interval", o.dead_interval, s.dead_interval),
-    ):
-        if got != want:
-            drift.append(
-                DiffLine(f"{label} {what}", str(want), "not set" if got is None else str(got))
-            )
-    return drift
+    return ospf_interface_drift(label, want, live)
 
 
 def link_drift(lab: Lab, router: Device) -> list[DiffLine]:
@@ -205,15 +214,16 @@ def assert_route_present(router: Device, prefix: str) -> Route:
 
 
 def assert_ospf_interface_matches_intent(router: Device, port: str) -> OspfInterface:
-    """The OSPF settings on `router:port` (area, hello, dead interval) are the intent's.
-    Two routers only become neighbors when these match on both ends."""
+    """The OSPF settings on `router:port` are the intent's: area, hello and dead interval
+    (neighbors only form when these match on both ends), network type, cost (it decides
+    the path) and addresses."""
     lab = current()
     live = router.ospf.interface_settings().get(port)
     drift = port_drift(lab, router, port, live)
     if drift:
         report = FailureReport(
             verdict=f"{router.name}:{port} OSPF settings must match the intent",
-            expected="OSPF area, hello and dead interval as in the intent",
+            expected="OSPF area, timers, network type, cost and addresses as in the intent",
             actual=f"{len(drift)} setting(s) differ",
             drift=drift,
         )

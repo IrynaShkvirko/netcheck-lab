@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from netcheck.assertions import assert_isolated
@@ -465,12 +467,8 @@ def test_interface_settings_mismatch_is_reported_per_port(fake) -> None:  # type
 
     lab, parts = fake
     make_healthy(lab, parts)
-    parts["ospf_r2"].config = parts["ospf_r2"].config.replace(
-        "interface eth1\n ip address 10.0.12.1/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
-        " ip ospf hello-interval 1",
-        "interface eth1\n ip address 10.0.12.1/31\n ip ospf area 0\n ip ospf dead-interval 4\n"
-        " ip ospf hello-interval 5",
-    )
+    r2 = parts["ospf_r2"]
+    r2.interfaces["p1"] = replace(r2.interfaces["p1"], hello_interval=5)
     assert_ospf_interface_matches_intent(lab["r2"], "p2")  # backup link untouched
     with pytest.raises(IntentViolation) as exc:
         assert_ospf_interface_matches_intent(lab["r2"], "p1")

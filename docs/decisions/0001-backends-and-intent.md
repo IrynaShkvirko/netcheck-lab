@@ -55,6 +55,12 @@ questions (`vlan_membership(switch)`, `routes(router)`, `originator(prefix)`,
 return, instead of reading string keys from a dict. `expected_state.json` is its
 `to_json()` and is unchanged.
 
+`Expected.ospf_interfaces(router)` states each router's intended OSPF interfaces as
+`OspfInterface` values (routed ports and VLAN gateway sub-interfaces). Render writes the FRR
+config from it, the OSPF drift checks compare live state with it using one rule (area as a
+number, timers, network type, cost, addresses), and a round-trip test requires the FRR
+writer and parser to agree with it.
+
 ## Consequences
 
 - Adding a NOS means writing one backend, not touching tests.
