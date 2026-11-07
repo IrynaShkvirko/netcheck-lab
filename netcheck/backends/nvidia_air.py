@@ -390,6 +390,12 @@ class NvidiaAirBackend(Backend):
         if not self.token:
             raise RuntimeError("NVIDIA backend needs NVIDIA_AIR_TOKEN and NVUE_PASSWORD")
 
+    def render(self) -> Path:
+        raise NotImplementedError(
+            "Air topology generation is not implemented yet: generate the DSX Air topology "
+            "(JSON or DOT) from the intent with swp port names (ADR-0001 open question)."
+        )
+
     def deploy(self, fresh: bool = False) -> bool:
         self._require_token()
         raise NotImplementedError(

@@ -6,14 +6,10 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
-
 from netcheck.backends import Backend, get_backend
 from netcheck.backends.base import LabDegraded, RestoreFailed, SnapshotMismatch
 from netcheck.faults import FAULTS
 from netcheck.intent import load_intent
-from netcheck.labstate import LabState
-from netcheck.render import render
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -36,23 +32,19 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("name", choices=sorted(FAULTS))
     args = p.parse_args(argv)
 
-    intent = load_intent(args.intent)
-    if args.cmd == "render":
-        settings = yaml.safe_load((ROOT / "backends.yaml").read_text())["local"]
-        out = render(intent, settings["images"], ROOT / "build" / intent.name)
-        print(f"rendered {out}")
-        return 0
-
-    backend = get_backend(args.backend, intent, ROOT)
+    backend = get_backend(args.backend, load_intent(args.intent), ROOT)
     try:
-        return _run(args, backend, LabState(ROOT))
-    except (LabDegraded, SnapshotMismatch, RestoreFailed) as exc:
+        return _run(args, backend)
+    except (LabDegraded, SnapshotMismatch, RestoreFailed, NotImplementedError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
 
-def _run(args: argparse.Namespace, backend: Backend, state: LabState) -> int:
-    if args.cmd == "deploy":
+def _run(args: argparse.Namespace, backend: Backend) -> int:
+    state = backend.state
+    if args.cmd == "render":
+        print(f"rendered {backend.render()}")
+    elif args.cmd == "deploy":
         had_baseline = state.baseline()
         deployed, baseline = backend.up(fresh=args.fresh)
         if deployed or baseline != had_baseline:
@@ -71,18 +63,9 @@ def _run(args: argparse.Namespace, backend: Backend, state: LabState) -> int:
     elif args.cmd == "snapshot":
         print(backend.snapshot("manual"))
     elif args.cmd == "restore":
-        snap = args.snapshot_id or state.baseline()
-        if snap is None:
-            print("error: no baseline yet; run `make lab-up` first", file=sys.stderr)
-            return 1
-        backend.restore(snap)
-        if args.snapshot_id is None:
-            state.clear_faults()  # the baseline has no faults in it
-        print(f"restored {snap}")
+        print(f"restored {backend.reset(args.snapshot_id)}")
     elif args.cmd == "fault":
-        description = FAULTS[args.name](backend)
-        state.add_fault(args.name, description)
-        print(f"fault injected: {description}")
+        print(f"fault injected: {backend.inject_fault(args.name)}")
     return 0
 
 
