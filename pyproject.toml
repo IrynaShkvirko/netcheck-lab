@@ -11,6 +11,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "mutmut>=3.8.1",
     "mypy>=1.10",
     "ruff>=0.5",
     "types-PyYAML",
@@ -54,3 +55,13 @@ packages = ["netcheck"]
 disallow_untyped_defs = true
 warn_unused_ignores = true
 no_implicit_optional = true
+
+[tool.mutmut]
+# Mutation testing (.claude/skills/mutation-testing). Mutates netcheck/ except the two
+# real transports, which no unit test can reach (docker exec, HTTPS to a switch).
+source_paths = ["netcheck/"]
+do_not_mutate = ["netcheck/transport/docker_exec.py", "netcheck/transport/nvue_rest.py"]
+pytest_add_cli_args_test_selection = ["tests/unit"]
+# mutmut runs the tests from a copy under mutants/. It copies tests/ and pyproject.toml
+# itself; the tests also read these from the repo root.
+also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py"]
