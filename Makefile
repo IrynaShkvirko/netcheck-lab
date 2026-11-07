@@ -8,7 +8,7 @@ CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
 
 .PHONY: install install-clab render lab-up lab-fresh lab-down lab-reset fault-wrong-vlan \
         fault-missing-ospf test-unit test-lab test-lab-live smoke demo \
-        lint typecheck check mutate pin-images
+        lint typecheck check mutate mutate-lab pin-images
 
 install:            ## Python deps (uv)
 	uv sync
@@ -67,6 +67,27 @@ check: lint typecheck test-unit
 mutate:             ## mutation testing over tests/unit (slow; see .claude/skills/mutation-testing)
 	uv run mutmut run
 	uv run mutmut results
+
+# Lab mutation profile (mutation/lab): functions of the local backend that send real
+# commands and no unit test reaches. Never deploy/destroy, LocalSnapshot or the lifecycle.
+LOCAL := netcheck.backends.local
+LAB_MUTANTS_LinuxShell   := '$(LOCAL).xǁLinuxShellǁ*'
+LAB_MUTANTS_FrrOspf      := '$(LOCAL).xǁFrrOspfǁ*'
+LAB_MUTANTS_links-bridge := '$(LOCAL).xǁLinuxLinksǁ*' '$(LOCAL).xǁLinuxBridgeǁ*'
+LAB_MUTANTS_backend      := '$(LOCAL).xǁLocalBackendǁis_running*' '$(LOCAL).xǁLocalBackendǁenvironment*' \
+                            '$(LOCAL).xǁLocalBackendǁdevices*' '$(LOCAL).xǁLocalBackendǁopen_transport*' \
+                            '$(LOCAL).xǁLocalBackendǁcontainer*'
+LAB_MUTANTS_all := $(LAB_MUTANTS_LinuxShell) $(LAB_MUTANTS_FrrOspf) $(LAB_MUTANTS_links-bridge) \
+                   $(LAB_MUTANTS_backend)
+LAB_MUTMUT = cd mutation/lab && NETCHECK_SLA_MODE=record \
+	UV_PROJECT_ENVIRONMENT=$(abspath $(UV_PROJECT_ENVIRONMENT)) uv run --project $(CURDIR) mutmut
+
+mutate-lab:         ## mutation testing against the running lab; GROUP=LinuxShell|FrrOspf|links-bridge|backend|all
+	@test -n "$(LAB_MUTANTS_$(GROUP))" || \
+		{ echo "GROUP must be one of: LinuxShell FrrOspf links-bridge backend all"; exit 2; }
+	$(MAKE) test-lab    # the unmutated lab suite must be green first
+	$(LAB_MUTMUT) run --max-children 1 $(LAB_MUTANTS_$(GROUP))
+	$(LAB_MUTMUT) results
 
 pin-images:         ## print image digests to paste into backends.yaml
 	@for img in $$(grep -E '^\s+(router|switch|host):' backends.yaml | awk '{print $$2}' | sort -u); do \

@@ -32,7 +32,7 @@ not one per mutant**, as one of:
 |---|---|---|
 | Test gap | The code is right; no test asserts this behaviour | Stage 3 writes the test |
 | Source bug | The mutant survives because the code is already wrong | Stage 2 first |
-| Lab-only | Only `tests/lab` reaches it (deploy, destroy, `docker ps`, Air calls) | Record it; not a unit gap |
+| Lab-only | Only `tests/lab` reaches it (real commands, `docker ps`, Air calls) | Check it with the lab profile (SKILL.md § "Lab profile"); deploy, destroy and NVIDIA code stay recorded as lab-only |
 | Dead code | Unreachable or unused | Delete it rather than test it |
 
 ### Dismiss as noise
