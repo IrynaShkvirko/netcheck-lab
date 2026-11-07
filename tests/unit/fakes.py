@@ -19,6 +19,7 @@ from netcheck.capabilities import (
     PortVlans,
     Route,
     Shell,
+    Snapshot,
 )
 from netcheck.device import Device
 from netcheck.devicelog import DeviceLog
@@ -131,6 +132,37 @@ class FakeShell(Shell):
         return PingResult(self.name, "stream", 300, 290)
 
 
+class FakeSnapshot(Snapshot):
+    """Takes and restores the fakes' state: link admin, bridge VLANs, OSPF area overrides.
+    `fail_with` makes restore_to raise, as a device that cannot be restored would."""
+
+    def __init__(
+        self, links: FakeLinks, bridge: FakeBridge | None = None, ospf: FakeOspf | None = None
+    ) -> None:
+        self.links, self.bridge, self.ospf = links, bridge, ospf
+        self.fail_with: Exception | None = None
+        self.restores = 0
+
+    def take(self) -> Any:
+        return {
+            "links": dict(self.links.admin),
+            "bridge": {p: [v.mode, list(v.vlans)] for p, v in self.bridge.ports.items()}
+            if self.bridge
+            else None,
+            "ospf_areas": dict(self.ospf.area_overrides) if self.ospf else None,
+        }
+
+    def restore_to(self, state: Any) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+        self.restores += 1
+        self.links.admin = dict(state["links"])
+        if self.bridge is not None:
+            self.bridge.ports = {p: PortVlans(m, tuple(v)) for p, (m, v) in state["bridge"].items()}
+        if self.ospf is not None:
+            self.ospf.area_overrides = dict(state["ospf_areas"])
+
+
 def port_name(handle: CaptureHandle) -> str:
     return handle.port
 
@@ -161,11 +193,8 @@ class FakeBackend(Backend):
     def __init__(self, intent: Intent, devices: dict[str, Device], root: Path) -> None:
         super().__init__(intent, {}, root)
         self._devices = devices
-        self.restored: list[str] = []
         self.deploys: list[bool] = []
         self.deploy_result = False
-        self.restore_error: Exception | None = None
-        self.snapshots = 0
 
     def deploy(self, fresh: bool = False) -> bool:
         self.deploys.append(fresh)
@@ -179,15 +208,6 @@ class FakeBackend(Backend):
 
     def devices(self) -> dict[str, Device]:
         return self._devices
-
-    def snapshot(self, label: str) -> str:
-        self.snapshots += 1
-        return f"{label}-fake-{self.snapshots}"
-
-    def restore(self, snapshot_id: str) -> None:
-        if self.restore_error is not None:
-            raise self.restore_error
-        self.restored.append(snapshot_id)
 
     def environment(self) -> dict[str, str]:
         return {"topology": self.intent.name, "backend": "fake", "intent": self.intent.digest}
@@ -220,7 +240,9 @@ def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
     devices: dict[str, Device] = {}
     parts: dict[str, Any] = {"bridge": bridge}
     for name, n in intent.nodes.items():
-        caps: dict[type, object] = {Links: FakeLinks()}
+        links = FakeLinks()
+        caps: dict[type, object] = {Links: links}
+        o = None
         if n.role == "router":
             o = FakeOspf()
             caps[Ospf] = o
@@ -229,6 +251,9 @@ def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
             caps[Bridge] = bridge
         if n.role == "host":
             caps[Shell] = FakeShell(name, world)
+        snap = FakeSnapshot(links, bridge if n.role == "switch" else None, o)
+        caps[Snapshot] = snap
+        parts[f"snapshot_{name}"] = snap
         ports = {
             ep.port: f"eth{ep.port[1:]}"
             for lk in intent.links_of(name)

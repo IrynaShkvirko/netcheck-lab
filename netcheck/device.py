@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import cast
 
-from netcheck.capabilities import Bridge, Links, Ospf, Shell
+from netcheck.capabilities import Bridge, Links, Ospf, Shell, Snapshot
 from netcheck.devicelog import DeviceLog
 
 
@@ -54,6 +54,10 @@ class Device:
     @property
     def shell(self) -> Shell:
         return cast(Shell, self.cap(Shell))
+
+    @property
+    def snapshot(self) -> Snapshot:
+        return cast(Snapshot, self.cap(Snapshot))
 
     def logical_port(self, real: str) -> str:
         for logical, name in self.port_map.items():

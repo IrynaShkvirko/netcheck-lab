@@ -28,7 +28,7 @@ Device(name, role, capabilities={...})
   Bridge        vlan_membership()
   Links         set_link(port, up)
   Shell         run(cmd), ping(), capture()
-  Snapshot      take() / restore(id)
+  Snapshot      take() / restore_to(state)   (implemented 2026-11-07, see ADR-0003)
 ```
 
 **Resolved open question: transport choice is per backend and per device, not global.**

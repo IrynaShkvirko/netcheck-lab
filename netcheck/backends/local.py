@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ipaddress
-import json
 import os
 import re
 import secrets
@@ -13,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from netcheck.backends.base import Backend, LabDegraded
+from netcheck.backends.base import Backend
 from netcheck.capabilities import (
     Bridge,
     CaptureHandle,
@@ -25,6 +24,7 @@ from netcheck.capabilities import (
     PortVlans,
     Route,
     Shell,
+    Snapshot,
 )
 from netcheck.device import Device
 from netcheck.devicelog import DeviceLog
@@ -278,11 +278,18 @@ class LinuxBridge(_Base, Bridge):
         return parse_bridge_vlans(self.run("bridge -j vlan show").check().json(), self.to_logical)
 
     def set_access_vlan(self, port: str, vlan: int) -> None:
+        self.set_port_vlans(port, PortVlans("access", (vlan,)))
+
+    def set_port_vlans(self, port: str, wanted: PortVlans) -> None:
+        """Replace the port's VLANs: access = one untagged PVID, trunk = tagged VLANs.
+        Backend-internal (also used by snapshot restore); not part of the Bridge interface."""
         ifname = self.real(port)
         current = self.vlan_membership().get(port)
         for vid in current.vlans if current else ():
             self.run(f"bridge vlan del dev {ifname} vid {vid}").check()
-        self.run(f"bridge vlan add dev {ifname} vid {vlan} pvid untagged").check()
+        extra = " pvid untagged" if wanted.mode == "access" else ""
+        for vid in wanted.vlans:
+            self.run(f"bridge vlan add dev {ifname} vid {vid}{extra}").check()
 
 
 class LinuxLinks(_Base, Links):
@@ -394,6 +401,90 @@ class LinuxShell(_Base, Shell):
         return parse_ping(self.device, "stream", out)
 
 
+class LocalSnapshot(Snapshot):
+    """A device's links, bridge VLANs, FRR config and host routes (ADR-0003).
+
+    Built from the device's own adapters; a part is None when the role lacks it.
+    Restore order: links, bridge, FRR, host routes (routes need their link up).
+    Each part changes nothing when it already matches and verifies FRR afterwards.
+    """
+
+    def __init__(
+        self,
+        device: str,
+        links: LinuxLinks,
+        bridge: LinuxBridge | None = None,
+        ospf: FrrOspf | None = None,
+        host: LinuxShell | None = None,
+    ) -> None:
+        self.device = device
+        self.links, self.bridge, self.ospf, self.host = links, bridge, ospf, host
+
+    def take(self) -> dict[str, Any]:
+        ports = list(self.links.port_map)
+        state: dict[str, Any] = {
+            "links": {p: s["admin"] for p, s in self.links.link_states(ports).items()}
+        }
+        if self.bridge is not None:
+            # intended ports only: restore puts those back; an extra port is drift to report
+            state["bridge"] = {
+                p: [pv.mode, list(pv.vlans)]
+                for p, pv in self.bridge.vlan_membership().items()
+                if p in self.bridge.port_map
+            }
+        if self.ospf is not None:
+            state["frr"] = self.ospf.running_config()
+        if self.host is not None:
+            state["host_routes"] = self.host.route_table()
+        return state
+
+    def restore_to(self, state: dict[str, Any]) -> None:
+        self._restore_links(state["links"])
+        if self.bridge is not None:
+            self._restore_bridge(self.bridge, state["bridge"])
+        if self.ospf is not None:
+            self._restore_frr(self.ospf, state["frr"])
+        if self.host is not None:
+            for cmd in host_route_diff(state["host_routes"], self.host.route_table()):
+                self.host.run(cmd).check()
+
+    def _restore_links(self, wanted: dict[str, str]) -> None:
+        live = self.links.link_states(list(wanted))
+        for port, admin in wanted.items():
+            if port not in live:
+                raise TransportError(f"{self.device}: port {port} is gone")
+            if live[port]["admin"] != admin:
+                self.links.set_link(port, admin == "up")
+
+    @staticmethod
+    def _restore_bridge(bridge: LinuxBridge, wanted: dict[str, list[Any]]) -> None:
+        live = bridge.vlan_membership()
+        for port, (mode, vlans) in wanted.items():
+            target = PortVlans(mode, tuple(vlans))
+            if live.get(port) != target:
+                bridge.set_port_vlans(port, target)
+
+    def _restore_frr(self, ospf: FrrOspf, wanted: str) -> None:
+        """Apply only the differing lines through vtysh, then re-read and verify.
+
+        Does not depend on frr-reload.py (not usable in the FRR container image).
+        """
+        steps = frr_config_diff(wanted, ospf.running_config())
+        if not steps:
+            return
+        for step in steps:
+            args = " ".join(f"-c {shlex.quote(c)}" for c in ["conf t", *step])
+            res = ospf.run(f"vtysh {args}")
+            if not res.ok:
+                raise TransportError(
+                    f"{self.device}: restore step {step} failed: "
+                    f"{(res.stdout + res.stderr).strip()[-300:]}"
+                )
+        remaining = frr_config_diff(wanted, ospf.running_config())
+        if remaining:
+            raise TransportError(f"{self.device}: config still differs after restore: {remaining}")
+
+
 # ---- backend -------------------------------------------------------------
 
 
@@ -424,20 +515,6 @@ class LocalBackend(Backend):
             check=False,
         ).stdout.split()
         return len(out) == len(self.intent.nodes)
-
-    def missing_ports(self) -> list[str]:
-        """Intended ports that do not exist in their container.
-
-        Containerlab wires links once at deploy; a restarted container comes back
-        without them. Returns e.g. ["r1:p1 (eth1)"]; empty means the lab is intact.
-        """
-        missing = []
-        for name, dev in self.devices().items():
-            present = dev.links.link_states(list(dev.port_map))
-            missing += [
-                f"{name}:{lp} ({real})" for lp, real in dev.port_map.items() if lp not in present
-            ]
-        return missing
 
     def deploy(self, fresh: bool = False) -> bool:
         render(self.intent, self.settings["images"], self.build_dir, self.prefix)
@@ -482,122 +559,21 @@ class LocalBackend(Backend):
             for ep in (lk.a, lk.b)
             if ep.node == name
         }
-        caps: dict[type, object] = {Links: LinuxLinks(t, ports)}
-        if role == "router":
-            caps[Ospf] = FrrOspf(t, ports)
-        if role == "switch":
-            caps[Bridge] = LinuxBridge(t, ports)
-        if role in ("host", "switch"):
-            caps[Shell] = LinuxShell(t, ports, name)
+        links = LinuxLinks(t, ports)
+        ospf = FrrOspf(t, ports) if role == "router" else None
+        bridge = LinuxBridge(t, ports) if role == "switch" else None
+        shell = LinuxShell(t, ports, name) if role in ("host", "switch") else None
+        caps: dict[type, object] = {Links: links}
+        if ospf is not None:
+            caps[Ospf] = ospf
+        if bridge is not None:
+            caps[Bridge] = bridge
+        if shell is not None:
+            caps[Shell] = shell
+        caps[Snapshot] = LocalSnapshot(name, links, bridge, ospf, shell if role == "host" else None)
         return Device(
             name=name, role=role, backend=self.name, log=log, capabilities=caps, port_map=ports
         )
-
-    # snapshots (ADR-0003)
-    def snapshot(self, label: str) -> str:
-        snap_id = f"{label}-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
-        data: dict[str, Any] = {
-            "id": snap_id,
-            "intent": self.intent.digest,
-            "frr": {},
-            "bridge": {},
-            "links": {},
-            "host_routes": {},
-        }
-        for name, dev in self.devices().items():
-            states = dev.links.link_states(list(dev.port_map))
-            data["links"][name] = {p: s["admin"] for p, s in states.items()}
-            if dev.has(Ospf):
-                ospf = dev.ospf
-                assert isinstance(ospf, FrrOspf)
-                data["frr"][name] = ospf.running_config()
-            if dev.role == "host" and dev.has(Shell):
-                shell = dev.shell
-                assert isinstance(shell, LinuxShell)
-                data["host_routes"][name] = shell.route_table()
-            if dev.has(Bridge):
-                # intended ports only: restore puts those back; an extra port is drift to report
-                data["bridge"][name] = {
-                    p: [pv.mode, list(pv.vlans)]
-                    for p, pv in dev.bridge.vlan_membership().items()
-                    if p in dev.port_map
-                }
-        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
-        (self.snapshot_dir / f"{snap_id}.json").write_text(json.dumps(data, indent=2))
-        self.state.prune_snapshots()
-        return snap_id
-
-    def restore(self, snapshot_id: str) -> None:
-        data = json.loads((self.snapshot_dir / f"{snapshot_id}.json").read_text())
-        devs = self.devices()
-        live_links = {n: d.links.link_states(list(d.port_map)) for n, d in devs.items()}
-        missing = [
-            f"{n}:{lp} ({real})"
-            for n, d in devs.items()
-            for lp, real in d.port_map.items()
-            if lp not in live_links[n]
-        ]
-        if missing:
-            raise LabDegraded(
-                f"cannot restore {snapshot_id}: lab links are gone ({', '.join(missing)}). "
-                "A container was probably restarted. Run `make lab-fresh`."
-            )
-        for name, ports in data["links"].items():
-            for port, admin in ports.items():
-                if live_links[name][port]["admin"] != admin:
-                    devs[name].links.set_link(port, admin == "up")
-        for name, ports in data["bridge"].items():
-            live = devs[name].bridge.vlan_membership()
-            for port, (mode, vlans) in ports.items():
-                if port not in devs[name].port_map:
-                    continue  # snapshots from before extra ports were reported
-                cur = live.get(port)
-                if cur and cur.mode == mode and list(cur.vlans) == vlans:
-                    continue
-                self._restore_port(devs[name], port, mode, vlans)
-        for name, config in data["frr"].items():
-            ospf = devs[name].ospf
-            assert isinstance(ospf, FrrOspf)
-            self._restore_frr(name, ospf, config)
-        for name, routes in data.get("host_routes", {}).items():  # older snapshots lack it
-            shell = devs[name].shell
-            assert isinstance(shell, LinuxShell)
-            for cmd in host_route_diff(routes, shell.route_table()):
-                shell.run(cmd).check()
-
-    @staticmethod
-    def _restore_frr(name: str, ospf: FrrOspf, wanted: str) -> None:
-        """Bring FRR back to `wanted` by applying only the differing lines.
-
-        Does not depend on frr-reload.py (not usable in the FRR container image).
-        Skips entirely when nothing changed, and verifies the result afterwards.
-        """
-        steps = frr_config_diff(wanted, ospf.running_config())
-        if not steps:
-            return
-        for step in steps:
-            args = " ".join(f"-c {shlex.quote(c)}" for c in ["conf t", *step])
-            res = ospf.run(f"vtysh {args}")
-            if not res.ok:
-                raise TransportError(
-                    f"{name}: restore step {step} failed: "
-                    f"{(res.stdout + res.stderr).strip()[-300:]}"
-                )
-        remaining = frr_config_diff(wanted, ospf.running_config())
-        if remaining:
-            raise TransportError(f"{name}: config still differs after restore: {remaining}")
-
-    @staticmethod
-    def _restore_port(dev: Device, port: str, mode: str, vlans: list[int]) -> None:
-        br = dev.bridge
-        assert isinstance(br, LinuxBridge)
-        ifname = br.real(port)
-        cur = br.vlan_membership().get(port)
-        for vid in cur.vlans if cur else ():
-            br.run(f"bridge vlan del dev {ifname} vid {vid}").check()
-        for vid in vlans:
-            extra = " pvid untagged" if mode == "access" else ""
-            br.run(f"bridge vlan add dev {ifname} vid {vid}{extra}").check()
 
     def environment(self) -> dict[str, str]:
         env = {

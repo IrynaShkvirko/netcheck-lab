@@ -58,3 +58,13 @@ vendor, image or interface.
 
 - Air API: confirm how a topology is created from a generated spec and how long a
   simulation takes to boot. This sets the NVIDIA timing profile (ADR-0004).
+  Update 2026-11-06: the service is now NVIDIA DSX Air. Simulations are created with
+  `POST https://api.dsx-air.nvidia.com/api/v3/simulations/import/` (JSON or DOT
+  topology, NGC API key as Bearer token) and started with a separate call. Accounts go
+  through an NGC organization; personal email domains are not accepted.
+- Reaching NVUE: switch management addresses (192.168.200.0/24) are only reachable inside
+  the simulation; external access ends at the `oob-mgmt-server`. Either run the tests
+  there or tunnel the NVUE port through it.
+- NVUE JSON: the RIB, bridge and link response shapes are not documented as JSON; the
+  parsers follow the documented object model and fail on unknown shapes. Confirm with
+  responses captured from a real switch (`record_samples`).

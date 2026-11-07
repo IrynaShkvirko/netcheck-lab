@@ -1,0 +1,89 @@
+{
+  "eth0": {
+    "type": "eth",
+    "ip": {
+      "address": {
+        "192.168.200.11/24": {}
+      },
+      "vrf": "mgmt"
+    }
+  },
+  "lo": {
+    "type": "loopback",
+    "ip": {
+      "address": {
+        "2.2.2.2/32": {}
+      }
+    }
+  },
+  "swp1": {
+    "type": "swp",
+    "link": {
+      "state": {
+        "up": {}
+      }
+    },
+    "ip": {
+      "address": {
+        "10.0.12.1/31": {}
+      }
+    },
+    "router": {
+      "ospf": {
+        "enable": "on",
+        "area": "0",
+        "network-type": "point-to-point",
+        "timers": {
+          "hello-interval": 1,
+          "dead-interval": 4
+        },
+        "cost": 10
+      }
+    }
+  },
+  "swp2": {
+    "type": "swp",
+    "link": {
+      "state": {
+        "up": {}
+      }
+    },
+    "ip": {
+      "address": {
+        "10.0.12.3/31": {}
+      }
+    },
+    "router": {
+      "ospf": {
+        "enable": "on",
+        "area": "0",
+        "network-type": "point-to-point",
+        "timers": {
+          "hello-interval": 1,
+          "dead-interval": 4
+        },
+        "cost": 100
+      }
+    }
+  },
+  "swp3": {
+    "ip": {
+      "address": {
+        "10.0.30.1/24": {}
+      }
+    },
+    "router": {
+      "ospf": {
+        "enable": "on",
+        "area": "0",
+        "passive": "on"
+      }
+    },
+    "type": "swp",
+    "link": {
+      "state": {
+        "up": {}
+      }
+    }
+  }
+}

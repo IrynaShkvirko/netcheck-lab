@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 # ---- normalized state --------------------------------------------------
 
@@ -156,3 +157,18 @@ class Shell(ABC):
 
     @abstractmethod
     def stop_stream(self, token: str) -> PingResult: ...
+
+
+class Snapshot(ABC):
+    """A device's restorable state: configuration and link state (ADR-0003).
+
+    The state is a JSON-serializable value that only the adapter which took it
+    understands; the backend stores it without looking inside.
+    """
+
+    @abstractmethod
+    def take(self) -> Any: ...
+
+    @abstractmethod
+    def restore_to(self, state: Any) -> None:
+        """Bring the device back to `state`, verify it, raise if it still differs."""

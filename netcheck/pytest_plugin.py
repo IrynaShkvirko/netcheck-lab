@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from netcheck.backends import get_backend
+from netcheck.backends.base import SnapshotMismatch
 from netcheck.cleanup import CleanupError
 from netcheck.device import CapabilityMissing
 from netcheck.intent import expected_state, load_intent
@@ -82,7 +83,11 @@ def lab(request: pytest.FixtureRequest) -> Generator[Lab, None, None]:
     backend = get_backend(cfg.getoption("--backend"), intent, ROOT)
     deployed, _ = backend.up(fresh=cfg.getoption("--fresh-lab"))
     if cfg.getoption("--snapshot"):
-        backend.restore(cfg.getoption("--snapshot"))
+        try:
+            backend.restore(cfg.getoption("--snapshot"))
+        except SnapshotMismatch as exc:
+            # a wrong ID, not a broken lab: stop before any test, as a usage error
+            pytest.exit(f"--snapshot: {exc}", returncode=pytest.ExitCode.USAGE_ERROR)
     timing = Timing.load(ROOT / "timing.yaml", backend.timing_profile, intent.timer_vars())
     the_lab = Lab(
         intent=intent,

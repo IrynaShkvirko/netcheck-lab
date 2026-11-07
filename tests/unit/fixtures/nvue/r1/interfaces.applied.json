@@ -1,0 +1,94 @@
+{
+  "eth0": {
+    "type": "eth",
+    "ip": {
+      "address": {
+        "192.168.200.11/24": {}
+      },
+      "vrf": "mgmt"
+    }
+  },
+  "lo": {
+    "type": "loopback",
+    "ip": {
+      "address": {
+        "1.1.1.1/32": {}
+      }
+    }
+  },
+  "swp1": {
+    "type": "swp",
+    "link": {
+      "state": {
+        "up": {}
+      }
+    }
+  },
+  "swp1.10": {
+    "ip": {
+      "address": {
+        "10.0.10.1/24": {}
+      }
+    },
+    "router": {
+      "ospf": {
+        "enable": "on",
+        "area": "0",
+        "passive": "on"
+      }
+    },
+    "type": "sub",
+    "base-interface": "swp1",
+    "vlan": 10
+  },
+  "swp2": {
+    "type": "swp",
+    "link": {
+      "state": {
+        "up": {}
+      }
+    },
+    "ip": {
+      "address": {
+        "10.0.12.0/31": {}
+      }
+    },
+    "router": {
+      "ospf": {
+        "enable": "on",
+        "area": "0",
+        "network-type": "point-to-point",
+        "timers": {
+          "hello-interval": 1,
+          "dead-interval": 4
+        },
+        "cost": 10
+      }
+    }
+  },
+  "swp3": {
+    "type": "swp",
+    "link": {
+      "state": {
+        "up": {}
+      }
+    },
+    "ip": {
+      "address": {
+        "10.0.12.2/31": {}
+      }
+    },
+    "router": {
+      "ospf": {
+        "enable": "on",
+        "area": "0",
+        "network-type": "point-to-point",
+        "timers": {
+          "hello-interval": 1,
+          "dead-interval": 4
+        },
+        "cost": 100
+      }
+    }
+  }
+}

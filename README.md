@@ -229,6 +229,7 @@ Start with the error text: command failures name the container they ran on
 | `Device "eth1" does not exist`, or `lab links are gone (r1:p1 (eth1))` | A container restarted (Docker restart, VM or laptop sleep) and lost its links; Containerlab wires links only at deploy | `make lab-fresh` (`make lab-up` also detects this and redeploys) |
 | `ERROR at teardown of <test>`: "cleanup failed after the test" | An undo step failed; the snapshot rollback still worked | Read `artifacts/<test-id>/cleanup-errors.txt`; usually a bug in the test's undo action |
 | Run stops: "lab restore failed after <test>" (exit code 3) | The rollback itself failed; the lab is in an unknown state | `make lab-reset`, or `make lab-fresh` if that fails too; then rerun |
+| `snapshot <id> has an older file format`, or "was taken from intent ..." / "on backend ..." (CLI exit 1, `--snapshot` exit 4) | The snapshot is from another lab: an older netcheck, another intent or another backend. Nothing was changed | `make lab-fresh` for a new baseline, or pass a snapshot ID from this lab |
 | Header says `FAULTS ARE APPLIED`, tests fail | A fault from a demo or experiment is still in the lab | `make lab-reset` |
 | "lab tests share one lab and must run serially" | You ran with `-n` (pytest-xdist) | Drop `-n` |
 | `make lab-up` redeploys "intent is now ..." | `intent/lab.yaml` changed since the lab was built (also happens once after upgrading to this version) | Expected: the lab must match the intent |
@@ -280,8 +281,10 @@ def test_vlan_membership_matches_intent(lab: Lab, switch_name: str) -> None:
         with step(f"Check {switch_name}:{port} is {intended}", continue_on_failure=True):
             check_port_vlans(switch_name, port, expected, live)
 
-    with step(f"Check {switch_name} has no bridge ports the intent does not list",
-              continue_on_failure=True):
+    with step(
+        f"Check {switch_name} has no bridge ports the intent does not list",
+        continue_on_failure=True,
+    ):
         check_no_extra_ports(switch_name, expected, live)
 ```
 
@@ -357,4 +360,5 @@ intent timers (`dead_interval + 2`).
 - Framework core, intent rendering, assertions, reports, cleanup and timing: done, unit-tested with fake devices.
 - Local backend: verified end to end on a real lab (Containerlab 0.76, FRR 10.1, Apple Silicon via OrbStack). Next: pin images by digest with `make pin-images`.
 - Code-review fixes (false passes, baseline policy, teardown, evidence, normalized OSPF settings, validation, host routes, batched reads): unit-tested; first real-lab run after them still to do.
-- NVIDIA backend: transport and structure in place; NVUE object paths and Air simulation creation are open questions in ADR-0001 and ADR-0003.
+- NVIDIA backend, device side: NVUE responses parsed into the same normalized types as FRR, config changes through the NVUE revision flow. Tested against NVUE JSON samples built from the NVIDIA docs (`tests/unit/fixtures/nvue/`): the smoke, OSPF and drift lab tests pass on them unchanged. Next: replace the samples with responses captured from a real switch (`record_samples`).
+- NVIDIA backend, lab side: creating the DSX Air simulation, reaching NVUE through the `oob-mgmt-server`, host SSH and revision-based snapshots are still open (ADR-0001, ADR-0003).
