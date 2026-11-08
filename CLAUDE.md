@@ -1,3 +1,7 @@
+## Spec-driven workflow
+
+New features go idea -> requirements (`docs/requirements/`) -> implementation plan (`docs/plans/`) -> implementor -> reviewers -> plan-verifier. The agents, their order and the commands are in `.claude/agents/README.md`; project skills in `.claude/skills/README.md`. Current plan: NVIDIA backend (`docs/plans/2026-11-08-nvidia-backend-implementation-plan.md`).
+
 ## Agent skills
 
 ### Issue tracker
