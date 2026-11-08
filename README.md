@@ -357,6 +357,7 @@ intent timers (`dead_interval + 2`).
 - `NETCHECK_TIME_FACTOR=2` scales timeouts on slow runners.
 - `NETCHECK_SLA_MODE=strict` (default) fails on SLA breach; `record` (CI) records breaches as warnings and JUnit properties.
 - `NETCHECK_NO_DEPLOY=1` makes a run use the running lab or fail with `LabDegraded`, never deploy (set by `make mutate-lab`).
+- `NETCHECK_RESET_ON_START=1` restores the baseline when a run reuses the lab, instead of keeping what the last run left (set by `make mutate-lab`).
 
 ## Status
 

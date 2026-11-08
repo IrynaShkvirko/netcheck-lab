@@ -174,12 +174,17 @@ set to the absolute path of the venv).
   mutant makes the lab look stopped, degraded or built from another intent, `Backend.up()`
   raises `LabDegraded` instead of redeploying, and the mutant counts as killed. Set it
   yourself for any manual `mutmut run` from `mutation/lab/`.
+- **Every mutant starts from the baseline.** `make mutate-lab` also sets
+  `NETCHECK_RESET_ON_START=1`: each mutant's session restores the baseline before its
+  tests, so a restore broken by one mutant cannot carry over to the next. It changes
+  nothing when the lab already matches. Set it too for any manual `mutmut run`.
 - **Timing cannot cause a kill.** `NETCHECK_SLA_MODE=record` turns SLA breaches into
   warnings, so a slow mutant fails only on behaviour.
 
 **Distrust timing-sensitive kills.** mutmut counts any failure as a kill, including a flaky
 one. Re-run every mutant killed only by the failover, reconvergence or isolation tests
-(`NETCHECK_NO_DEPLOY=1 uv run --project ../.. mutmut run <name>` from `mutation/lab/`)
+(`NETCHECK_NO_DEPLOY=1 NETCHECK_RESET_ON_START=1 uv run --project ../.. mutmut run <name>`
+from `mutation/lab/`)
 before believing it.
 
 **Not here:** the NVIDIA backend, which cannot deploy a lab yet. Never run the lab profile
@@ -217,15 +222,12 @@ a lab survivor that the unit run kills is covered. Of the 73 lab survivors:
 | `set_link` that always sets `down` (killed in the re-run) | Was a **gap in lab isolation**: the snapshot restore set the link and never checked it. The restore now verifies links like FRR, so this mutant fails the restore |
 | `LocalBackend.is_running` `text=`/`check=` changes (6) | Equivalent: `docker ps` succeeds and bytes split into the same count. The 7 that made the lab look stopped are killed by `NETCHECK_NO_DEPLOY`; before it, the run redeployed the lab and they survived |
 
-**Known gap: a failed restore poisons the mutants after it.** When a mutant breaks the
-restore, pytest stops with "lab restore failed", but the next mutant starts on the same
-broken lab: `up()` reuses it, and each test snapshots the broken state as its starting
-point. In the `links-bridge` re-run, `set_link` 3 left r1:p2 down, and the mutants after
-it (`set_link` 4–8 and the last `LinuxBridge` mutant) failed on the r1–r2 primary
-adjacency, each after a 30 s wait. They would probably fail anyway, but not for that
-reason, and `LinkState.port` set to `None` (which survived the first run) needs
-re-checking. After any run with "lab restore failed" in the artifacts, run `make lab-reset`
-and treat later kills as unproven.
+**A failed restore once poisoned the mutants after it.** In the `links-bridge` re-run,
+`set_link` 3 broke the restore and left r1:p2 down; the next mutants started on that lab
+and failed the r1–r2 primary adjacency for that reason, not their own. Every mutant now
+starts from the baseline (`NETCHECK_RESET_ON_START`, above). Kills from that run for
+`set_link` 4–8 and the last `LinuxBridge` mutant are unproven, and `LinkState.port` set to
+`None`, which survived the first run, needs re-checking.
 
 **Harness artefact: session setup is mapped to the first test only.** mutmut records which
 tests reach a function while the suite runs once. The session fixture builds every adapter
