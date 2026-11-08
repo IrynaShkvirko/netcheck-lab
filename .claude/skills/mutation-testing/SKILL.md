@@ -185,16 +185,16 @@ before believing it.
 **Not here:** the NVIDIA backend, which cannot deploy a lab yet. Never run the lab profile
 in CI.
 
-**Lab baseline** (2026-11-07/08, Linux VM; `backend` re-run with `NETCHECK_NO_DEPLOY`;
-pytest's internal-error exit counts as killed):
+**Lab baseline** (2026-11-07/08, Linux VM; `backend` re-run with `NETCHECK_NO_DEPLOY`,
+`links-bridge` re-run with link verification; pytest's internal-error exit counts as killed):
 
 | Group | Killed | Survived | Timeout | No tests |
 |---|---|---|---|---|
 | `FrrOspf` | 19 | 0 | 0 | 27 |
 | `LinuxShell` | 59 | 66 | 1 | 5 |
-| `links-bridge` | 28 | 2 | 0 | 34 |
+| `links-bridge` | 30 | 0 | 0 | 34 |
 | `backend` | 31 | 7 | 0 | 41 |
-| `all` | 137 | 75 | 1 | 107 |
+| `all` | 139 | 73 | 1 | 107 |
 
 **No tests: code a green lab run never calls.** `FrrOspf.lsdb_prefixes` is read only while
 diagnosing a missing route. `FrrOspf.set_interface_area`, `LinuxBridge.set_access_vlan`
@@ -204,7 +204,7 @@ once per session, outside any test. None of these is an assertion gap. Record th
 failure-path or fault-only code rather than writing lab tests to force them.
 
 **Read the lab survivors next to the unit results.** `local.py` is mutated by both runs, so
-a lab survivor that the unit run kills is covered. Of the 75 lab survivors:
+a lab survivor that the unit run kills is covered. Of the 73 lab survivors:
 
 | Survivors | Class |
 |---|---|
@@ -213,9 +213,19 @@ a lab survivor that the unit run kills is covered. Of the 75 lab survivors:
 | `start_capture` (18), `stop_capture` (10) | Noise by design: a capture is evidence, `assertions.common.start_capture` swallows its errors, and the summary is only shown on failure |
 | `start_stream` path (3), `route_table` returning `[]` | Equivalent: the same value is used on both sides (stream token, snapshot and restore) |
 | `LinuxShell.__init__` (2) | Harness artefact (below) |
-| `LinkState.port` set to `None`, `devices` without the backend name | Noise: report labels |
-| `set_link` that always sets `down` | Was a **gap in lab isolation**: the snapshot restore set the link and never checked it, so r1's primary link stayed down for every mutant after it (any of their kills may be false). The restore now verifies links like FRR, so this mutant fails the restore. Re-run `links-bridge` from an empty `mutation/lab/mutants/` |
+| `devices` without the backend name | Noise: a report label |
+| `set_link` that always sets `down` (killed in the re-run) | Was a **gap in lab isolation**: the snapshot restore set the link and never checked it. The restore now verifies links like FRR, so this mutant fails the restore |
 | `LocalBackend.is_running` `text=`/`check=` changes (6) | Equivalent: `docker ps` succeeds and bytes split into the same count. The 7 that made the lab look stopped are killed by `NETCHECK_NO_DEPLOY`; before it, the run redeployed the lab and they survived |
+
+**Known gap: a failed restore poisons the mutants after it.** When a mutant breaks the
+restore, pytest stops with "lab restore failed", but the next mutant starts on the same
+broken lab: `up()` reuses it, and each test snapshots the broken state as its starting
+point. In the `links-bridge` re-run, `set_link` 3 left r1:p2 down, and the mutants after
+it (`set_link` 4–8 and the last `LinuxBridge` mutant) failed on the r1–r2 primary
+adjacency, each after a 30 s wait. They would probably fail anyway, but not for that
+reason, and `LinkState.port` set to `None` (which survived the first run) needs
+re-checking. After any run with "lab restore failed" in the artifacts, run `make lab-reset`
+and treat later kills as unproven.
 
 **Harness artefact: session setup is mapped to the first test only.** mutmut records which
 tests reach a function while the suite runs once. The session fixture builds every adapter
