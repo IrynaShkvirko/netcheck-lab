@@ -185,16 +185,16 @@ before believing it.
 **Not here:** the NVIDIA backend, which cannot deploy a lab yet. Never run the lab profile
 in CI.
 
-**Lab baseline** (first run, 2026-11-07/08, Linux VM; pytest's internal-error exit counts
-as killed):
+**Lab baseline** (2026-11-07/08, Linux VM; `backend` re-run with `NETCHECK_NO_DEPLOY`;
+pytest's internal-error exit counts as killed):
 
 | Group | Killed | Survived | Timeout | No tests |
 |---|---|---|---|---|
 | `FrrOspf` | 19 | 0 | 0 | 27 |
 | `LinuxShell` | 59 | 66 | 1 | 5 |
 | `links-bridge` | 28 | 2 | 0 | 34 |
-| `backend` | 24 | 14 | 0 | 41 |
-| `all` | 130 | 82 | 1 | 107 |
+| `backend` | 31 | 7 | 0 | 41 |
+| `all` | 137 | 75 | 1 | 107 |
 
 **No tests: code a green lab run never calls.** `FrrOspf.lsdb_prefixes` is read only while
 diagnosing a missing route. `FrrOspf.set_interface_area`, `LinuxBridge.set_access_vlan`
@@ -204,7 +204,7 @@ once per session, outside any test. None of these is an assertion gap. Record th
 failure-path or fault-only code rather than writing lab tests to force them.
 
 **Read the lab survivors next to the unit results.** `local.py` is mutated by both runs, so
-a lab survivor that the unit run kills is covered. Of the 82 lab survivors:
+a lab survivor that the unit run kills is covered. Of the 75 lab survivors:
 
 | Survivors | Class |
 |---|---|
@@ -215,7 +215,7 @@ a lab survivor that the unit run kills is covered. Of the 82 lab survivors:
 | `LinuxShell.__init__` (2) | Harness artefact (below) |
 | `LinkState.port` set to `None`, `devices` without the backend name | Noise: report labels |
 | `set_link` that always sets `down` | Unresolved: no test checks a link comes back up, and the mutant may have left a link down for the mutants after it. Re-check by hand |
-| `LocalBackend.is_running` (13) | False: made the lab look stopped, and the run (before `NETCHECK_NO_DEPLOY`) redeployed it from `mutation/lab/mutants/build/`. Delete `mutation/lab/mutants/` and re-run the `backend` group |
+| `LocalBackend.is_running` `text=`/`check=` changes (6) | Equivalent: `docker ps` succeeds and bytes split into the same count. The 7 that made the lab look stopped are killed by `NETCHECK_NO_DEPLOY`; before it, the run redeployed the lab and they survived |
 
 **Harness artefact: session setup is mapped to the first test only.** mutmut records which
 tests reach a function while the suite runs once. The session fixture builds every adapter
