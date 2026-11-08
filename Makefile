@@ -14,7 +14,7 @@ install:            ## Python deps (uv)
 	uv sync
 
 install-clab:       ## Containerlab at the pinned version
-	bash -c "$$(curl -sL https://get.containerlab.dev)" -- -v $(CLAB_VERSION)
+	scripts/install-clab.sh $(CLAB_VERSION)
 
 render:             ## topology + configs + expected state from intent/lab.yaml
 	$(NETCHECK) render

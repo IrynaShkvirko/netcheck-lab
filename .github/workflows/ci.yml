@@ -26,6 +26,9 @@ jobs:
   lab:
     needs: checks
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      checks: write                  # the JUnit report publishes a check run
     env:
       NETCHECK_SLA_MODE: record      # SLAs recorded, not enforced, on shared runners (ADR-0004)
       NETCHECK_TIME_FACTOR: "2"
@@ -40,14 +43,7 @@ jobs:
       - if: steps.uv.outcome == 'failure'
         uses: astral-sh/setup-uv@v5
       - run: uv sync
-      - name: Install containerlab (retried; its release download can fail briefly)
-        run: |
-          for attempt in 1 2 3 4; do
-            make install-clab && exit 0
-            [ "$attempt" = 4 ] && exit 1
-            echo "install-clab failed (attempt $attempt); retrying in $((attempt * 30))s"
-            sleep $((attempt * 30))
-          done
+      - run: make install-clab   # retries and checks each download (scripts/install-clab.sh)
       - id: up
         run: make lab-up
       - run: make test-lab
@@ -58,7 +54,7 @@ jobs:
           name: netcheck-artifacts
           path: artifacts/
       - name: Publish JUnit summary
-        if: always()
+        if: always() && hashFiles('artifacts/junit.xml') != ''   # no tests ran, nothing to report
         uses: mikepenz/action-junit-report@v4
         with:
           report_paths: artifacts/junit.xml
