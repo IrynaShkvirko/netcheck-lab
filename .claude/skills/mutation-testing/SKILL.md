@@ -208,7 +208,7 @@ a lab survivor that the unit run kills is covered. Of the 75 lab survivors:
 
 | Survivors | Class |
 |---|---|
-| `ping`: the "ping did not run" path (rc ≥ 2, nothing sent) | Mostly killed by the unit run. The rest are a **test gap**: rc exactly 2 with a summary line, and no output at all (`ping` mutants 22, 23, 30, 40, 41, 44) |
+| `ping`: the "ping did not run" path (rc ≥ 2, nothing sent) | Killed by the unit run. The last gaps (rc exactly 2 with a summary line, no output at all: `ping` mutants 22, 23, 30, 40, 41, 44) were closed by two tests in `tests/unit/test_review_fixes.py`, confirmed by a mutmut re-run |
 | `ping` defaults and timeout (1–5, 8, 10, 13); device and destination labels (15, 16); wording (33, 34) | Noise: defaults no test varies, report labels, prose |
 | `start_capture` (18), `stop_capture` (10) | Noise by design: a capture is evidence, `assertions.common.start_capture` swallows its errors, and the summary is only shown on failure |
 | `start_stream` path (3), `route_table` returning `[]` | Equivalent: the same value is used on both sides (stream token, snapshot and restore) |
