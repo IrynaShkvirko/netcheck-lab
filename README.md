@@ -7,7 +7,9 @@ and explains every failure in terms of the intent that was violated.
 It runs on two backends behind one interface:
 
 - **local**: FRR routers, a Linux-bridge switch and Linux hosts in Containerlab. Runs on a laptop and in GitHub Actions.
-- **nvidia**: Cumulus Linux on NVIDIA Air over the NVUE REST API (skeleton, see Status).
+- **nvidia**: Cumulus Linux on NVIDIA DSX Air over the NVUE REST API. The device side is done;
+  the lab side (creating the simulation, access, snapshots) is specified and planned, not built
+  yet (see Status).
 
 ## Topology
 
@@ -57,15 +59,20 @@ orb -m netlab                     # shell inside the VM; run all following steps
 ### 2. One-time setup (inside Linux)
 
 ```bash
-curl -sL https://containerlab.dev/setup | sudo -E bash -s "all"   # Docker + Containerlab
+curl -sL https://containerlab.dev/setup | sudo -E bash -s "all"   # Docker (+ latest Containerlab)
 sudo usermod -aG docker $USER && newgrp docker                     # docker without sudo
 sudo apt-get install -y make
 curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.bashrc
 
 cd /path/to/netcheck-lab
+make install-clab     # Containerlab at the version pinned in backends.yaml, checksum-verified
 make install          # Python dependencies
 make check            # lint + types + unit tests; no lab needed
 ```
+
+`make install-clab` (`scripts/install-clab.sh`) downloads the release `.deb` with retries,
+checks it against the release's `checksums.txt` and installs it with `dpkg` (Debian/Ubuntu).
+CI installs Containerlab the same way.
 
 `make check` should end with all unit tests passing. If it does not, fix that first: the
 problem is the Python setup, not the lab.
@@ -257,8 +264,9 @@ uv run python -m netcheck restore                                      # back to
 cat artifacts/<test-id>/logs/<device>.jsonl                            # every call a failed test made
 ```
 
-The NVIDIA backend (`--backend nvidia`) is not runnable yet; it needs `NVIDIA_AIR_TOKEN` and
-`NVUE_PASSWORD` and raises `NotImplementedError` at deploy (see Status).
+The NVIDIA backend (`--backend nvidia`) is not runnable yet: deploy raises
+`NotImplementedError` (see Status). When built, it will need `NVIDIA_AIR_TOKEN` and
+`NVUE_PASSWORD` in the environment and an SSH key in your agent.
 
 ## Writing a lab test
 
@@ -271,13 +279,14 @@ def test_vlan_membership_matches_intent(lab: Lab, switch_name: str) -> None:
     switch = lab[switch_name]
 
     with step(f"Read from the intent which VLANs each {switch_name} port must carry"):
-        expected = lab.expected["vlan_membership"][switch_name]
+        expected = lab.expected.vlan_membership(switch_name)
+        # e.g. {'p1': PortVlans('access', (10,)), 'p4': PortVlans('trunk', (10, 20))}
 
     with step(f"Read the live VLAN membership from {switch_name}"):
         live = switch.bridge.vlan_membership()
 
     for port, spec in sorted(expected.items()):
-        intended = describe_vlans(spec["mode"], spec["vlans"])
+        intended = describe_vlans(spec.mode, spec.vlans)
         with step(f"Check {switch_name}:{port} is {intended}", continue_on_failure=True):
             check_port_vlans(switch_name, port, expected, live)
 
@@ -297,8 +306,9 @@ setup step that fails should stop the test.
 
 Rules that keep the suite honest:
 
-- Get expectations from the intent (`lab.expected`, `lab.intent`, `netcheck.intent` helpers),
-  never hard-coded names or addresses, so the test follows the intent.
+- Get expectations from the intent: `lab.expected` answers questions in the capability types
+  (`vlan_membership(switch)`, `routes(router)`, `failover()`, ...), never hard-coded names or
+  addresses, so the test follows the intent.
 - Read the lab only through capabilities (`device.ospf`, `.bridge`, `.links`, `.shell`).
 - Check with the `check_*` / `assert_*` helpers in `netcheck.assertions`: they wait where the
   network needs time and build the failure report with evidence. A plain `assert` is fine for
@@ -311,13 +321,13 @@ For an interactive walk-through, open [`docs/backend-map.html`](docs/backend-map
 click a device to see its ports and capabilities, or step through a test layer by layer.
 
 ```
-intent/lab.yaml ──render──> build/<lab>/  topology.clab.yml, configs/, expected_state.json
+intent/lab.yaml ──render──> build/<lab>/  <lab>.clab.yml, configs/, expected_state.json
                                                │
 tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...)
                     │                         └─> FailureReport (8 parts) ─> console, JUnit, artifacts/
-                    └─> Device = transport + capabilities (Ospf, Bridge, Links, Shell)
+                    └─> Device = capabilities (Ospf, Bridge, Links, Shell, Snapshot) over a transport
                               ├─ local:  docker exec + JSON (vtysh json, ip -j, bridge -j)
-                              └─ nvidia: NVUE REST (JSON)
+                              └─ nvidia: NVUE REST (JSON); hosts over SSH (planned)
 ```
 
 | Path | What |
@@ -325,9 +335,11 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
 | `netcheck/intent.py` | intent model and validation |
 | `netcheck/expected.py` | expected state derived from the intent, in the capability types; writes `expected_state.json` |
 | `netcheck/render.py` | Containerlab topology, FRR config, switch and host setup |
-| `netcheck/device.py`, `capabilities.py` | composition: devices hold capabilities |
-| `netcheck/transport/` | `docker exec` and NVUE REST transports, each logging every call |
-| `netcheck/backends/` | `local` (Containerlab) and `nvidia` (Air) |
+| `netcheck/device.py`, `capabilities.py` | composition: devices hold capabilities; normalized state types |
+| `netcheck/assembly.py`, `ports.py` | one table of capabilities per role; logical port to real name mapping |
+| `netcheck/transport/` | `docker exec` and NVUE REST transports, each logging every call (`devicelog.py`) |
+| `netcheck/backends/` | `base.py` (lifecycle, snapshots), `local` (Containerlab), `nvidia_air` (DSX Air) |
+| `netcheck/faults.py` | demo faults, each breaking one intent |
 | `netcheck/steps.py` | named test steps; `continue_on_failure=True` for soft steps that report every failed check in one run |
 | `netcheck/assertions/` | domain assertions that collect evidence before failing: `l2.py` (VLANs, isolation), `reachability.py`, `ospf.py`, `common.py` (guarded evidence, captures) |
 | `netcheck/labstate.py` | baseline, active faults and deployed-intent markers in `.netcheck/` |
@@ -337,6 +349,9 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
 | `netcheck/report.py` | eight-part failure report |
 | `netcheck/testrun.py` | one lab test's run: snapshot, steps, cleanup, restore, failure evidence |
 | `netcheck/pytest_plugin.py` | session lab; turns each test run's outcome and report into pytest results |
+| `tests/unit/` | unit tests over fake transports and a fake lab (`fakes*.py`, NVUE samples in `fixtures/nvue/`) |
+| `mutation/lab/` | opt-in mutation-testing profile over the lab suite |
+| `scripts/install-clab.sh` | checked Containerlab install |
 
 ## Design decisions
 
@@ -359,10 +374,34 @@ intent timers (`dead_interval + 2`).
 - `NETCHECK_NO_DEPLOY=1` makes a run use the running lab or fail with `LabDegraded`, never deploy (set by `make mutate-lab`).
 - `NETCHECK_RESET_ON_START=1` restores the baseline when a run reuses the lab, instead of keeping what the last run left (set by `make mutate-lab`).
 
+## Mutation testing
+
+Mutation testing checks that the tests would notice a bug: mutmut changes the code one small
+edit at a time and reruns the tests against each change.
+
+```bash
+make mutate                         # over tests/unit (slow; no lab needed)
+make lab-up && make mutate-lab GROUP=FrrOspf   # opt-in, against the running local lab
+```
+
+`GROUP` is one of `LinuxShell`, `FrrOspf`, `links-bridge`, `backend`, `all`. The lab profile
+never deploys and starts every mutant from the baseline. It never runs in CI. How to read
+and triage the results, and the recorded baselines, are in
+[`.claude/skills/mutation-testing/SKILL.md`](.claude/skills/mutation-testing/SKILL.md).
+
+## Development workflow
+
+New features are specified before they are built: requirements in
+[`docs/requirements/`](docs/requirements/), then a step-by-step implementation plan in
+[`docs/plans/`](docs/plans/), then implementation, review and a check that the plan is
+complete. Claude Code agents, skills and slash commands for each stage are in
+[`.claude/`](.claude/agents/README.md). Commits and PRs follow
+[`.claude/skills/git-workflow/SKILL.md`](.claude/skills/git-workflow/SKILL.md); every change
+passes `make check`.
+
 ## Status
 
 - Framework core, intent rendering, assertions, reports, cleanup and timing: done, unit-tested with fake devices.
-- Local backend: verified end to end on a real lab (Containerlab 0.76, FRR 10.1, Apple Silicon via OrbStack). Next: pin images by digest with `make pin-images`.
-- Code-review fixes (false passes, baseline policy, teardown, evidence, normalized OSPF settings, validation, host routes, batched reads): unit-tested; first real-lab run after them still to do.
-- NVIDIA backend, device side: NVUE responses parsed into the same normalized types as FRR, config changes through the NVUE revision flow. Tested against NVUE JSON samples built from the NVIDIA docs (`tests/unit/fixtures/nvue/`): the smoke, OSPF and drift lab tests pass on them unchanged. Next: replace the samples with responses captured from a real switch (`record_samples`).
-- NVIDIA backend, lab side: creating the DSX Air simulation, reaching NVUE through the `oob-mgmt-server`, host SSH and revision-based snapshots are still open (ADR-0001, ADR-0003).
+- Local backend: verified end to end on a real lab (Containerlab 0.76, FRR 10.1, Apple Silicon via OrbStack) and in GitHub Actions (`lab` job), including the code-review fixes. Lab mutation runs found and closed two isolation gaps: link restores are now verified, and a mutation run never deploys and starts every mutant from the baseline. Next: pin the switch and host image by digest with `make pin-images`.
+- NVIDIA backend, device side: NVUE responses parsed into the same normalized types as FRR, config changes through the NVUE revision flow. Tested against NVUE JSON samples built from the NVIDIA docs (`tests/unit/fixtures/nvue/`): the smoke, OSPF and drift lab tests pass on them unchanged.
+- NVIDIA backend, lab side: not built yet. It is specified in [`docs/requirements/nvidia-backend-requirements.md`](docs/requirements/nvidia-backend-requirements.md) and planned in [`docs/plans/2026-11-08-nvidia-backend-implementation-plan.md`](docs/plans/2026-11-08-nvidia-backend-implementation-plan.md): spikes on a real DSX Air simulation, then the Air API client, topology rendering, SSH access to devices through the `oob-mgmt-server`, NVUE snapshots, live runs with captured samples and a measured timing profile.
