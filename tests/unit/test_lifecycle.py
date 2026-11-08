@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from netcheck.backends.base import SnapshotMismatch
+from netcheck.backends.base import LabDegraded, RestoreFailed, SnapshotMismatch
 from netcheck.backends.local import LocalBackend
 from netcheck.backends.nvidia_air import NvidiaAirBackend
 
@@ -156,3 +156,67 @@ def test_fresh_redeploys_an_intact_lab(fake) -> None:  # type: ignore[no-untyped
     _built_from_this_intent(lab.backend)
     deployed, _ = lab.backend.up(fresh=True)
     assert deployed and lab.backend.deploys == 1
+
+
+@pytest.mark.parametrize(
+    ("setup", "fresh", "why"),
+    [
+        ("stopped", False, "the lab is not running"),
+        ("degraded", False, "degraded (missing r1:p1 (eth1)"),
+        ("other-intent", False, "built from intent 0123abcd"),
+        ("intact", True, "a fresh lab was asked for"),
+    ],
+)
+def test_no_deploy_refuses_every_deploy(fake, monkeypatch, setup, fresh, why) -> None:  # type: ignore[no-untyped-def]
+    """NETCHECK_NO_DEPLOY (the lab mutation profile): use the running lab or fail."""
+    lab, _ = fake
+    monkeypatch.setenv("NETCHECK_NO_DEPLOY", "1")
+    _built_from_this_intent(lab.backend)
+    if setup == "stopped":
+        lab.backend.running = False
+    elif setup == "degraded":
+        monkeypatch.setattr(lab["r1"].links, "link_states", lambda ports: {})
+    elif setup == "other-intent":
+        lab.backend.state.set_deployed_intent("0123abcd")
+    with pytest.raises(LabDegraded, match=r"deploy refused \(NETCHECK_NO_DEPLOY is set\): ") as err:
+        lab.backend.up(fresh=fresh)
+    assert why in str(err.value)
+    assert lab.backend.deploys == 0
+
+
+def test_no_deploy_still_reuses_an_intact_lab(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    lab, _ = fake
+    monkeypatch.setenv("NETCHECK_NO_DEPLOY", "1")
+    _built_from_this_intent(lab.backend)
+    lab.backend.state.set_baseline("baseline-kept")
+    assert lab.backend.up() == (False, "baseline-kept")
+
+
+def _reused_lab_with_a_link_left_down(fake):  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    _built_from_this_intent(lab.backend)
+    _, baseline = lab.backend.up()  # first run takes the baseline
+    lab["r1"].links.set_link("p2", False)  # what a broken earlier run left behind
+    return lab, parts, baseline
+
+
+def test_reset_on_start_puts_a_reused_lab_back_to_its_baseline(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """NETCHECK_RESET_ON_START (the lab mutation profile): never start on a broken lab."""
+    lab, _, baseline = _reused_lab_with_a_link_left_down(fake)
+    monkeypatch.setenv("NETCHECK_RESET_ON_START", "1")
+    assert lab.backend.up() == (False, baseline)
+    assert lab["r1"].links.link_state("p2").admin_up
+
+
+def test_without_reset_on_start_a_reused_lab_is_left_as_it_is(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, _, _ = _reused_lab_with_a_link_left_down(fake)
+    lab.backend.up()
+    assert not lab["r1"].links.link_state("p2").admin_up  # kept for inspection
+
+
+def test_reset_on_start_that_cannot_restore_raises(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    lab, parts, _ = _reused_lab_with_a_link_left_down(fake)
+    monkeypatch.setenv("NETCHECK_RESET_ON_START", "1")
+    parts["snapshot_r1"].fail_with = RuntimeError("link will not come up")
+    with pytest.raises(RestoreFailed, match="r1: RuntimeError: link will not come up"):
+        lab.backend.up()

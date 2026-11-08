@@ -14,7 +14,7 @@ install:            ## Python deps (uv)
 	uv sync
 
 install-clab:       ## Containerlab at the pinned version
-	bash -c "$$(curl -sL https://get.containerlab.dev)" -- -v $(CLAB_VERSION)
+	scripts/install-clab.sh $(CLAB_VERSION)
 
 render:             ## topology + configs + expected state from intent/lab.yaml
 	$(NETCHECK) render
@@ -79,7 +79,7 @@ LAB_MUTANTS_backend      := '$(LOCAL).xǁLocalBackendǁis_running*' '$(LOCAL).x�
                             '$(LOCAL).xǁLocalBackendǁcontainer*'
 LAB_MUTANTS_all := $(LAB_MUTANTS_LinuxShell) $(LAB_MUTANTS_FrrOspf) $(LAB_MUTANTS_links-bridge) \
                    $(LAB_MUTANTS_backend)
-LAB_MUTMUT = cd mutation/lab && NETCHECK_SLA_MODE=record \
+LAB_MUTMUT = cd mutation/lab && NETCHECK_SLA_MODE=record NETCHECK_NO_DEPLOY=1 NETCHECK_RESET_ON_START=1 \
 	UV_PROJECT_ENVIRONMENT=$(abspath $(UV_PROJECT_ENVIRONMENT)) uv run --project $(CURDIR) mutmut
 
 mutate-lab:         ## mutation testing against the running lab; GROUP=LinuxShell|FrrOspf|links-bridge|backend|all

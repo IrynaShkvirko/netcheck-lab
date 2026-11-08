@@ -143,8 +143,10 @@ make mutate-lab GROUP=FrrOspf        # LinuxShell | FrrOspf | links-bridge | bac
 | `backend` | 79 | `LocalBackend` `is_running`, `environment`, `devices`, `open_transport`, `container` |
 | `all` | 320 | all of the above |
 
-Each mutant runs the lab tests that reach its function, so expect minutes per mutant, not
-seconds; start with one group. The cost per mutant has not been measured yet.
+Each mutant runs only the lab tests that reach its function. Measured on the Linux VM:
+`FrrOspf` took 7 s per mutant on average (32 s at most); the other three groups (274
+mutants) took about 55 minutes together, including a few redeploys it can no longer do.
+Each run also starts with one pass of the whole lab suite to map tests to functions.
 
 **How it is set up.** mutmut only reads the config in the directory it runs from, so the
 profile is the folder `mutation/lab/`: its own `pyproject.toml` (mutate only
@@ -165,19 +167,78 @@ set to the absolute path of the venv).
   `cleanup` are never mutated here; the unit run mutates them against fakes. `deploy` and
   `destroy` are left out too: `deploy` never runs on a reused lab, `destroy` tears it down.
 - **The run uses a copy of the lab's state.** `.netcheck/` is copied into the working copy,
-  so the run reuses the running lab and its baseline instead of redeploying, and anything
-  it writes (snapshots, the fault ledger) stays in the copy.
+  so the run reuses the running lab and its baseline, and anything it writes (snapshots,
+  the fault ledger) stays in the copy.
+
+- **The run never deploys.** `make mutate-lab` sets `NETCHECK_NO_DEPLOY=1`, so when a
+  mutant makes the lab look stopped, degraded or built from another intent, `Backend.up()`
+  raises `LabDegraded` instead of redeploying, and the mutant counts as killed. Set it
+  yourself for any manual `mutmut run` from `mutation/lab/`.
+- **Every mutant starts from the baseline.** `make mutate-lab` also sets
+  `NETCHECK_RESET_ON_START=1`: each mutant's session restores the baseline before its
+  tests, so a restore broken by one mutant cannot carry over to the next. It changes
+  nothing when the lab already matches. Set it too for any manual `mutmut run`.
 - **Timing cannot cause a kill.** `NETCHECK_SLA_MODE=record` turns SLA breaches into
   warnings, so a slow mutant fails only on behaviour.
 
 **Distrust timing-sensitive kills.** mutmut counts any failure as a kill, including a flaky
 one. Re-run every mutant killed only by the failover, reconvergence or isolation tests
-(`uv run --project ../.. mutmut run <name>` from `mutation/lab/`) before believing it.
+(`NETCHECK_NO_DEPLOY=1 NETCHECK_RESET_ON_START=1 uv run --project ../.. mutmut run <name>`
+from `mutation/lab/`)
+before believing it.
 
 **Not here:** the NVIDIA backend, which cannot deploy a lab yet. Never run the lab profile
 in CI.
 
-**Lab baseline:** not measured yet. Fill in the score per group after the first run.
+**Lab baseline** (2026-11-07/08, Linux VM; `backend` re-run with `NETCHECK_NO_DEPLOY`,
+`links-bridge` re-run with link verification and `NETCHECK_RESET_ON_START`; pytest's
+internal-error exit counts as killed):
+
+| Group | Killed | Survived | Timeout | No tests |
+|---|---|---|---|---|
+| `FrrOspf` | 19 | 0 | 0 | 27 |
+| `LinuxShell` | 59 | 66 | 1 | 5 |
+| `links-bridge` | 29 | 1 | 0 | 34 |
+| `backend` | 31 | 7 | 0 | 41 |
+| `all` | 138 | 74 | 1 | 107 |
+
+**No tests: code a green lab run never calls.** `FrrOspf.lsdb_prefixes` is read only while
+diagnosing a missing route. `FrrOspf.set_interface_area`, `LinuxBridge.set_access_vlan`
+and `set_port_vlans` are used only by faults and restores. `LinuxLinks.link_state` and
+`LinuxShell.neighbors` are evidence for failure reports. `LocalBackend.environment` runs
+once per session, outside any test. None of these is an assertion gap. Record them as
+failure-path or fault-only code rather than writing lab tests to force them.
+
+**Read the lab survivors next to the unit results.** `local.py` is mutated by both runs, so
+a lab survivor that the unit run kills is covered. Of the 74 lab survivors:
+
+| Survivors | Class |
+|---|---|
+| `ping`: the "ping did not run" path (rc ≥ 2, nothing sent) | Killed by the unit run. The last gaps (rc exactly 2 with a summary line, no output at all: `ping` mutants 22, 23, 30, 40, 41, 44) were closed by two tests in `tests/unit/test_review_fixes.py`, confirmed by a mutmut re-run |
+| `ping` defaults and timeout (1–5, 8, 10, 13); device and destination labels (15, 16); wording (33, 34) | Noise: defaults no test varies, report labels, prose |
+| `start_capture` (18), `stop_capture` (10) | Noise by design: a capture is evidence, `assertions.common.start_capture` swallows its errors, and the summary is only shown on failure |
+| `start_stream` path (3), `route_table` returning `[]` | Equivalent: the same value is used on both sides (stream token, snapshot and restore) |
+| `LinuxShell.__init__` (2) | Harness artefact (below) |
+| `LinkState.port` set to `None`, `devices` without the backend name | Noise: report labels |
+| `set_link` that always sets `down` (killed in the re-run) | Was a **gap in lab isolation**: the snapshot restore set the link and never checked it. The restore now verifies links like FRR, so this mutant fails the restore |
+| `LocalBackend.is_running` `text=`/`check=` changes (6) | Equivalent: `docker ps` succeeds and bytes split into the same count. The 7 that made the lab look stopped are killed by `NETCHECK_NO_DEPLOY`; before it, the run redeployed the lab and they survived |
+
+**A failed restore once poisoned the mutants after it.** In one `links-bridge` run,
+`set_link` 3 broke the restore and left r1:p2 down; the next mutants started on that lab
+and failed the r1–r2 primary adjacency after 30 s waits, for that reason rather than their
+own, and `LinkState.port` set to `None` was falsely killed. With `NETCHECK_RESET_ON_START`
+the same group runs in about 2.5 minutes with no restore errors, `set_link` 3 and 5 are
+killed by the baseline restore at the start of the session, and the false kill is gone.
+If a cleanup error still says "lab restore failed", run `make lab-reset` before the next
+run.
+
+**Harness artefact: session setup is mapped to the first test only.** mutmut records which
+tests reach a function while the suite runs once. The session fixture builds every adapter
+during the first test (`test_vlan_membership_matches_intent[sw1]`), so constructors,
+`LocalFactory`, `open_transport` and `is_running` are checked against that test alone,
+which never pings or captures. A survivor in that code proves nothing until it is re-run
+against the whole suite: `uv run --project ../.. mutmut run <name>` will not do that, so
+apply it by hand (see `references/hand-proofs.md`) and run `make test-lab`.
 
 ## Many survivors
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import time
 from abc import ABC, abstractmethod
@@ -56,6 +57,10 @@ class Backend(ABC):
         deployed intent recorded. A baseline is taken only right after a real deploy (or
         if none exists yet), never from a reused lab, which may still carry an injected
         fault. Returns (deployed, baseline snapshot ID).
+
+        With NETCHECK_RESET_ON_START set (the lab mutation profile sets it), a reused lab
+        is put back to its baseline first, so a run never starts on what an earlier run
+        left behind. A failed restore raises, as `reset` does.
         """
         deployed = self._deploy_unless_reusable(fresh)
         baseline = self.state.baseline()
@@ -63,22 +68,37 @@ class Backend(ABC):
             baseline = self.snapshot("baseline")
             self.state.set_baseline(baseline)
             self.state.clear_faults()
+        elif os.environ.get("NETCHECK_RESET_ON_START"):
+            self.reset(baseline)
         return deployed, baseline
 
     def _deploy_unless_reusable(self, fresh: bool) -> bool:
-        """Reuse the running lab if it can be trusted, else deploy. True if deployed."""
-        if self.is_running() and not fresh:
-            built_from = self.state.deployed_intent()
-            missing = self.missing_ports()
-            if built_from == self.intent.digest and not missing:
-                return False
-            if missing:
-                print(f"lab is running but degraded (missing {', '.join(missing)}); redeploying")
+        """Reuse the running lab if it can be trusted, else deploy. True if deployed.
+
+        With NETCHECK_NO_DEPLOY set (the lab mutation profile sets it), a deploy is
+        refused with LabDegraded instead: the caller wants the running lab or nothing.
+        """
+        reason, announce = "a fresh lab was asked for", False
+        if not fresh:
+            if not self.is_running():
+                reason = "the lab is not running"
             else:
-                print(
-                    f"lab was built from intent {built_from or 'unknown'}, "
-                    f"intent is now {self.intent.digest}; redeploying"
-                )
+                built_from = self.state.deployed_intent()
+                missing = self.missing_ports()
+                if built_from == self.intent.digest and not missing:
+                    return False
+                announce = True
+                if missing:
+                    reason = f"lab is running but degraded (missing {', '.join(missing)})"
+                else:
+                    reason = (
+                        f"lab was built from intent {built_from or 'unknown'}, "
+                        f"intent is now {self.intent.digest}"
+                    )
+        if os.environ.get("NETCHECK_NO_DEPLOY"):
+            raise LabDegraded(f"deploy refused (NETCHECK_NO_DEPLOY is set): {reason}")
+        if announce:
+            print(f"{reason}; redeploying")
         self.deploy()
         self.state.set_deployed_intent(self.intent.digest)
         return True

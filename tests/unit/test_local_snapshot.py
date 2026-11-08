@@ -83,10 +83,20 @@ def test_frr_still_differing_after_apply_raises() -> None:
 
 
 def test_link_taken_down_by_a_test_is_brought_back_up() -> None:
-    snap, t = router([R1], links=[LINKS_UP, _links(down=("eth2",))])
+    snap, t = router([R1], links=[LINKS_UP, _links(down=("eth2",)), LINKS_UP])
     state = snap.take()
     snap.restore_to(state)
     assert t.writes == ["ip link set eth2 up"]
+
+
+def test_link_still_down_after_restore_raises() -> None:
+    """A link that does not come back must fail the restore, not leave the lab broken."""
+    snap, _ = router([R1], links=[LINKS_UP, _links(down=("eth2",))])  # stays down
+    state = snap.take()
+    with pytest.raises(
+        TransportError, match=r"r1: links still wrong after restore: p2 \(want up\)"
+    ):
+        snap.restore_to(state)
 
 
 def test_missing_port_raises_instead_of_a_key_error() -> None:

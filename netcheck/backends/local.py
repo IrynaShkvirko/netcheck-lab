@@ -398,7 +398,7 @@ class LocalSnapshot(Snapshot):
 
     Built from the device's own adapters; a part is None when the role lacks it.
     Restore order: links, bridge, FRR, host routes (routes need their link up).
-    Each part changes nothing when it already matches and verifies FRR afterwards.
+    Each part changes nothing when it already matches; links and FRR are verified afterwards.
     """
 
     def __init__(
@@ -444,11 +444,21 @@ class LocalSnapshot(Snapshot):
 
     def _restore_links(self, wanted: dict[str, str]) -> None:
         live = self.links.link_states(list(wanted))
+        changed = []
         for port, admin in wanted.items():
             if port not in live:
                 raise TransportError(f"{self.device}: port {port} is gone")
             if live[port].admin_up != (admin == "up"):
                 self.links.set_link(port, admin == "up")
+                changed.append(port)
+        if not changed:
+            return
+        # verify, as FRR is: a link left down would break every later test silently
+        after = self.links.link_states(changed)
+        wrong = [p for p in changed if p not in after or after[p].admin_up != (wanted[p] == "up")]
+        if wrong:
+            listing = ", ".join(f"{p} (want {wanted[p]})" for p in wrong)
+            raise TransportError(f"{self.device}: links still wrong after restore: {listing}")
 
     @staticmethod
     def _restore_bridge(bridge: LinuxBridge, wanted: dict[str, list[Any]]) -> None:

@@ -36,6 +36,20 @@ def test_ping_error_exit_code_did_not_run() -> None:
     assert not r.ran and "Network is unreachable" in r.error
 
 
+def test_ping_error_exit_code_wins_over_a_summary_line() -> None:
+    """rc 2 means ping hit an error; counts it printed on the way must not be reported."""
+    out = "ping: sendmsg: Network is unreachable\n3 packets transmitted, 2 received, +1 errors\n"
+    r = _shell(out, 2).ping("10.0.20.13")
+    assert (r.sent, r.received) == (0, 0)
+    assert r.error == "ping did not run (rc=2): 3 packets transmitted, 2 received, +1 errors"
+
+
+def test_ping_that_printed_nothing_says_so() -> None:
+    r = _shell("", 2).ping("10.0.20.13")
+    assert (r.sent, r.received) == (0, 0)
+    assert r.error == "ping did not run (rc=2): no output"
+
+
 def test_ping_with_no_replies_is_a_result_not_an_error() -> None:
     r = _shell("20 packets transmitted, 0 received, 100% packet loss\n", 1).ping("10.0.20.13")
     assert (r.sent, r.received) == (20, 0)
