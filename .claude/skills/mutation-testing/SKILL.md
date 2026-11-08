@@ -214,7 +214,7 @@ a lab survivor that the unit run kills is covered. Of the 75 lab survivors:
 | `start_stream` path (3), `route_table` returning `[]` | Equivalent: the same value is used on both sides (stream token, snapshot and restore) |
 | `LinuxShell.__init__` (2) | Harness artefact (below) |
 | `LinkState.port` set to `None`, `devices` without the backend name | Noise: report labels |
-| `set_link` that always sets `down` | Unresolved: no test checks a link comes back up, and the mutant may have left a link down for the mutants after it. Re-check by hand |
+| `set_link` that always sets `down` | Was a **gap in lab isolation**: the snapshot restore set the link and never checked it, so r1's primary link stayed down for every mutant after it (any of their kills may be false). The restore now verifies links like FRR, so this mutant fails the restore. Re-run `links-bridge` from an empty `mutation/lab/mutants/` |
 | `LocalBackend.is_running` `text=`/`check=` changes (6) | Equivalent: `docker ps` succeeds and bytes split into the same count. The 7 that made the lab look stopped are killed by `NETCHECK_NO_DEPLOY`; before it, the run redeployed the lab and they survived |
 
 **Harness artefact: session setup is mapped to the first test only.** mutmut records which
