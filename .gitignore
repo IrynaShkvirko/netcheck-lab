@@ -11,3 +11,7 @@ clab-*/
 
 # mutation testing working tree (mutmut)
 mutants/
+
+# secrets and captures never belong in git
+.env*
+*.pcap
