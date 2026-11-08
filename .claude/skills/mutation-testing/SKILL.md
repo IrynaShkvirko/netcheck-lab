@@ -145,7 +145,7 @@ make mutate-lab GROUP=FrrOspf        # LinuxShell | FrrOspf | links-bridge | bac
 
 Each mutant runs only the lab tests that reach its function. Measured on the Linux VM:
 `FrrOspf` took 7 s per mutant on average (32 s at most); the other three groups (274
-mutants) took about 55 minutes together, redeploys included (see the warning below).
+mutants) took about 55 minutes together, including a few redeploys it can no longer do.
 Each run also starts with one pass of the whole lab suite to map tests to functions.
 
 **How it is set up.** mutmut only reads the config in the directory it runs from, so the
@@ -170,20 +170,17 @@ set to the absolute path of the venv).
   so the run reuses the running lab and its baseline, and anything it writes (snapshots,
   the fault ledger) stays in the copy.
 
-**Known gap: a mutant can redeploy the lab.** `Backend.up()` deploys when the lab looks
-stopped or degraded, and nothing stops it during a mutation run. The first `all` run did
-this: `is_running` mutants (a misspelt `docker ps`, `!=`) and the mutant that blanks the
-port prefix made the lab look stopped or degraded, so the run redeployed it from
-`mutation/lab/mutants/build/`. The `is_running` mutants then "survived" because the
-redeploy worked. Until a no-deploy guard exists, treat those `is_running` survivors as
-false, and run `make lab-fresh` from the repo root after a `backend` or `all` run, so the
-lab is again deployed from the repo's own `build/`.
+- **The run never deploys.** `make mutate-lab` sets `NETCHECK_NO_DEPLOY=1`, so when a
+  mutant makes the lab look stopped, degraded or built from another intent, `Backend.up()`
+  raises `LabDegraded` instead of redeploying, and the mutant counts as killed. Set it
+  yourself for any manual `mutmut run` from `mutation/lab/`.
 - **Timing cannot cause a kill.** `NETCHECK_SLA_MODE=record` turns SLA breaches into
   warnings, so a slow mutant fails only on behaviour.
 
 **Distrust timing-sensitive kills.** mutmut counts any failure as a kill, including a flaky
 one. Re-run every mutant killed only by the failover, reconvergence or isolation tests
-(`uv run --project ../.. mutmut run <name>` from `mutation/lab/`) before believing it.
+(`NETCHECK_NO_DEPLOY=1 uv run --project ../.. mutmut run <name>` from `mutation/lab/`)
+before believing it.
 
 **Not here:** the NVIDIA backend, which cannot deploy a lab yet. Never run the lab profile
 in CI.
@@ -218,7 +215,7 @@ a lab survivor that the unit run kills is covered. Of the 82 lab survivors:
 | `LinuxShell.__init__` (2) | Harness artefact (below) |
 | `LinkState.port` set to `None`, `devices` without the backend name | Noise: report labels |
 | `set_link` that always sets `down` | Unresolved: no test checks a link comes back up, and the mutant may have left a link down for the mutants after it. Re-check by hand |
-| `LocalBackend.is_running` (13) | False: see the redeploy warning above |
+| `LocalBackend.is_running` (13) | False: made the lab look stopped, and the run (before `NETCHECK_NO_DEPLOY`) redeployed it from `mutation/lab/mutants/build/`. Delete `mutation/lab/mutants/` and re-run the `backend` group |
 
 **Harness artefact: session setup is mapped to the first test only.** mutmut records which
 tests reach a function while the suite runs once. The session fixture builds every adapter
