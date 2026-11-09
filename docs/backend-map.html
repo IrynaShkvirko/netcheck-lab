@@ -3,27 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>netcheck Backend Map</title>
+<title>netcheck-lab Walkthrough</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: a lab-bench page. Live topology on the left, a step-through "trace" on the right,
-   reference sections below. Colors come from the subject: VLAN 10 blue, VLAN 20 amber, routed links slate. */
+/* Layout: a lab-bench walkthrough in six numbered stops (the order of the talk).
+   Colors come from the subject: VLAN 10 blue, VLAN 20 amber, routed links slate,
+   the local backend teal-grey, the NVIDIA backend green; pass/fail are semantic only. */
 :root {
   --bg: #f3f5f7;
   --panel: #ffffff;
   --ink: #18212b;
   --muted: #5b6876;
   --line: #d5dce3;
-  --accent: #1f5fbf;        /* active trace */
+  --accent: #1f5fbf;
   --accent-soft: #e3ecfa;
   --vlan10: #2f7fd8;
   --vlan20: #c98a12;
   --routed: #4f5d6b;
+  --local: #2f6f7a;
+  --nvidia: #4f8a10;
   --pass: #1f8a5b;
   --fail: #c2412d;
+  --plan: #8a6d1f;
   --code-bg: #eef1f4;
   --node-fill: #ffffff;
+  --on-accent: #ffffff;
   --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -32,48 +38,128 @@
   :root:not([data-theme="light"]) {
     --bg: #11161c; --panel: #171e26; --ink: #e4e9ee; --muted: #93a1af; --line: #2a3541;
     --accent: #6ea2f0; --accent-soft: #1c2b40; --vlan10: #5ea2ef; --vlan20: #e3a73a; --routed: #9aa8b6;
-    --pass: #45b884; --fail: #ec6b56; --code-bg: #0e1318; --node-fill: #1b232c; color-scheme: dark;
+    --local: #6fb3bd; --nvidia: #8cc84b; --pass: #45b884; --fail: #ec6b56; --plan: #d8b45a;
+    --code-bg: #0e1318; --node-fill: #1b232c; --on-accent: #0d1420; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #11161c; --panel: #171e26; --ink: #e4e9ee; --muted: #93a1af; --line: #2a3541;
   --accent: #6ea2f0; --accent-soft: #1c2b40; --vlan10: #5ea2ef; --vlan20: #e3a73a; --routed: #9aa8b6;
-  --pass: #45b884; --fail: #ec6b56; --code-bg: #0e1318; --node-fill: #1b232c; color-scheme: dark;
+  --local: #6fb3bd; --nvidia: #8cc84b; --pass: #45b884; --fail: #ec6b56; --plan: #d8b45a;
+  --code-bg: #0e1318; --node-fill: #1b232c; --on-accent: #0d1420; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body {
   background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55;
+  margin: 0;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 28px 56px;
+  padding-block: 28px 64px;
 }
-.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 44px; }
 h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: .01em; }
-h1 { font-size: clamp(1.7rem, 3.4vw, 2.3rem); line-height: 1.1; }
-h2 { font-size: 1.35rem; }
+h1 { font-size: clamp(1.8rem, 3.6vw, 2.5rem); line-height: 1.08; }
+h2 { font-size: 1.5rem; line-height: 1.15; }
 h3 { font-size: 1.05rem; }
 p { margin: 0; }
-.lede { color: var(--muted); max-width: 70ch; margin-top: 8px; }
+a { color: var(--accent); }
+.lede { color: var(--muted); max-width: 68ch; }
 .eyebrow { font-family: var(--mono); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 code, pre, .mono { font-family: var(--mono); font-size: .84rem; }
-code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
 pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
       margin: 0; overflow-x: auto; white-space: pre; line-height: 1.5; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
+.note { font-size: .86rem; color: var(--muted); }
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; min-width: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Layer strip */
-.layers { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
-.layer { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); min-width: 0;
-         transition: background .2s, border-color .2s; }
-.layer b { display: block; font-family: var(--display); font-weight: 600; font-size: .95rem; }
-.layer span { display: block; font-family: var(--mono); font-size: .72rem; color: var(--muted); overflow-wrap: anywhere; }
-.layer.on { background: var(--accent-soft); border-color: var(--accent); }
-.layer.on b { color: var(--accent); }
-@media (max-width: 760px) { .layers { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* header + stop list */
+header { display: grid; gap: 12px; }
+.stops { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
+.stops a { display: inline-flex; gap: 8px; align-items: baseline; text-decoration: none; color: var(--ink);
+           border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 5px 12px; font-size: .86rem; }
+.stops a b { font-family: var(--mono); font-weight: 500; color: var(--accent); font-size: .78rem; }
+.stops a:hover { border-color: var(--accent); }
 
-/* Main two-column area */
+/* section heads: the number is the stop in the talk */
+section.stop { display: grid; gap: 16px; scroll-margin-top: 16px; }
+.stop-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: baseline; }
+.stop-num { font-family: var(--mono); font-size: .9rem; color: var(--accent); border: 1px solid var(--accent);
+            border-radius: 6px; padding: 1px 7px; grid-row: span 2; align-self: start; margin-top: 4px; }
+.say { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; max-width: 72ch; }
+.say::before { content: "Say it: "; font-family: var(--mono); font-size: .74rem; text-transform: uppercase;
+               letter-spacing: .06em; color: var(--accent); }
+
+/* 1: pipeline */
+.flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; }
+.flow .f { position: relative; padding: 14px 16px 14px 14px; border: 1px solid var(--line); background: var(--panel);
+           min-width: 0; display: grid; gap: 4px; align-content: start; }
+.flow .f:first-child { border-radius: 12px 0 0 12px; }
+.flow .f:last-child { border-radius: 0 12px 12px 0; }
+.flow .f + .f { border-left: 0; }
+.flow .f b { font-family: var(--display); font-size: 1.02rem; }
+.flow .f .mono { font-size: .74rem; color: var(--muted); overflow-wrap: anywhere; }
+.flow .f p { font-size: .86rem; }
+.flow .f + .f::before { content: "→"; position: absolute; left: -9px; top: 14px; background: var(--bg); color: var(--accent);
+                        font-family: var(--mono); font-size: .8rem; line-height: 1; padding: 2px 0; }
+@media (max-width: 900px) {
+  .flow { grid-template-columns: minmax(0, 1fr); }
+  .flow .f, .flow .f:first-child, .flow .f:last-child { border-radius: 0; }
+  .flow .f:first-child { border-radius: 12px 12px 0 0; }
+  .flow .f:last-child { border-radius: 0 0 12px 12px; }
+  .flow .f + .f { border-left: 1px solid var(--line); border-top: 0; }
+  .flow .f + .f::before { content: "↓"; left: 14px; top: -9px; padding: 0 4px; }
+}
+.claims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.claims div { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.claims b { font-family: var(--display); font-size: 1.05rem; }
+.claims p { font-size: .9rem; color: var(--muted); }
+@media (max-width: 760px) { .claims { grid-template-columns: minmax(0, 1fr); } }
+
+/* 2: architecture stack */
+.arch-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 940px) { .arch-grid { grid-template-columns: minmax(0, 1fr); } }
+.arch { display: grid; gap: 6px; }
+.arch .row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 10px; align-items: stretch; }
+.arch .lane { font-family: var(--mono); font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+              padding-top: 10px; }
+.arch .cells { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+.blk { text-align: left; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+       border-radius: 8px; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; min-width: 0;
+       transition: border-color .15s, background .15s; }
+.blk b { font-family: var(--display); font-weight: 600; font-size: .95rem; }
+.blk span { font-family: var(--mono); font-size: .7rem; color: var(--muted); overflow-wrap: anywhere; }
+.blk:hover { border-color: var(--accent); }
+.blk[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.blk.local { border-left: 4px solid var(--local); }
+.blk.nvidia { border-left: 4px solid var(--nvidia); }
+.blk.side { border-style: dashed; }
+@media (max-width: 560px) {
+  .arch .row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .arch .lane { padding-top: 6px; }
+  .arch .cells { grid-auto-flow: row; }
+}
+.status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: .72rem;
+          border: 1px solid currentColor; border-radius: 999px; padding: 1px 8px; width: fit-content; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.status.done { color: var(--pass); }
+.status.partial { color: var(--nvidia); }
+.status.planned { color: var(--plan); }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 14px; font-size: .88rem; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; }
+
+/* 3: lab map */
 .main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 @media (max-width: 940px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; width: fit-content; }
+.seg button { font: 500 .84rem var(--body); background: var(--panel); color: var(--ink); border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"][data-backend="local"] { background: var(--local); color: var(--on-accent); }
+.seg button[aria-pressed="true"][data-backend="nvidia"] { background: var(--nvidia); color: var(--on-accent); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
 .topo-scroll { overflow-x: auto; }
 svg.topo { display: block; width: 100%; min-width: 620px; height: auto; }
 .topo .link { fill: none; stroke-width: 3; transition: stroke-width .2s, opacity .2s; }
@@ -87,169 +173,383 @@ svg.topo { display: block; width: 100%; min-width: 620px; height: auto; }
 .topo .node:focus-visible rect, .topo .node:hover rect { stroke: var(--accent); }
 .topo .node text { fill: var(--ink); font-family: var(--display); font-weight: 600; font-size: 20px; }
 .topo .node .sub { fill: var(--muted); font-family: var(--mono); font-weight: 400; font-size: 12px; }
-.topo .port { fill: var(--muted); font-family: var(--mono); font-size: 13px; }
-.topo .lbl { fill: var(--muted); font-family: var(--mono); font-size: 13px; }
+.topo .port, .topo .lbl { fill: var(--muted); font-family: var(--mono); font-size: 13px; }
 .topo.tracing .link { opacity: .25; }
 .topo.tracing .node rect { opacity: .55; }
 .topo .link.hot { opacity: 1 !important; stroke-width: 5; }
 .topo .node.hot rect { opacity: 1 !important; stroke: var(--accent); stroke-width: 3; fill: var(--accent-soft); }
 .topo .node.sel rect { stroke: var(--accent); stroke-width: 3; }
-.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: .82rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .82rem; color: var(--muted); }
 .legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 6px; }
-
-/* Trace panel */
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
-.tab { font: 500 .82rem var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-       padding: 6px 10px; border-radius: 999px; cursor: pointer; }
-.tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-.tab:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.testid { font-family: var(--mono); font-size: .78rem; color: var(--muted); margin-top: 12px; overflow-wrap: anywhere; }
-.step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 14px; }
-.step-count { font-family: var(--mono); font-size: .78rem; color: var(--muted); white-space: nowrap; }
-.step-title { font-family: var(--display); font-size: 1.15rem; font-weight: 600; }
-.step-layer { display: inline-block; font-family: var(--mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
-              color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 6px; margin-top: 6px; }
-.step-body { margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-.step-body p { max-width: 62ch; }
-.where { font-size: .82rem; color: var(--muted); }
-.nav { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
-.btn { font: 500 .85rem var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-       padding: 7px 14px; border-radius: 8px; cursor: pointer; }
-.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn:disabled { opacity: .45; cursor: default; }
-.dots { display: flex; gap: 5px; margin-left: auto; flex-wrap: wrap; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); border: 0; padding: 0; cursor: pointer; }
-.dot.on { background: var(--accent); }
-.outcome { display: grid; gap: 6px; }
-.pill { display: inline-block; font-family: var(--mono); font-size: .72rem; padding: 1px 7px; border-radius: 999px; color: #fff; }
-.pill.pass { background: var(--pass); } .pill.fail { background: var(--fail); }
-
-/* Node detail */
-.detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: .88rem; }
-.kv dt { color: var(--muted); }
-.kv dd { margin: 0; overflow-wrap: anywhere; }
 .caps { display: flex; flex-wrap: wrap; gap: 6px; }
 .cap { font-family: var(--mono); font-size: .76rem; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: var(--code-bg); }
+.tbl-scroll { overflow-x: auto; }
 table.ports { width: 100%; border-collapse: collapse; font-size: .84rem; }
 table.ports th, table.ports td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.ports th { color: var(--muted); font-weight: 500; font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; }
 table.ports td:first-child, table.ports td:nth-child(2) { font-family: var(--mono); white-space: nowrap; }
-.tbl-scroll { overflow-x: auto; }
 
-/* Reference grid */
+/* 4: trace */
+.layers { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.layer { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); min-width: 0;
+         transition: background .2s, border-color .2s; }
+.layer b { display: block; font-family: var(--display); font-weight: 600; font-size: .95rem; }
+.layer span { display: block; font-family: var(--mono); font-size: .7rem; color: var(--muted); overflow-wrap: anywhere; }
+.layer.on { background: var(--accent-soft); border-color: var(--accent); }
+.layer.on b { color: var(--accent); }
+@media (max-width: 760px) { .layers { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tab { font: 500 .82rem var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+       padding: 6px 10px; border-radius: 999px; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.testid { font-family: var(--mono); font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
+.step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.step-count { font-family: var(--mono); font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.step-title { font-family: var(--display); font-size: 1.15rem; font-weight: 600; }
+.step-tag { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.step-layer { font-family: var(--mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+              color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 6px; }
+.named { font-family: var(--mono); font-size: .78rem; color: var(--ink); background: var(--code-bg);
+         border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; overflow-wrap: anywhere; }
+.named em { font-style: normal; color: var(--muted); }
+.step-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.step-body p { max-width: 64ch; }
+.where { font-size: .82rem; color: var(--muted); }
+.planned-note { font-size: .84rem; color: var(--plan); }
+.nav { display: flex; gap: 8px; align-items: center; }
+.btn { font: 500 .85rem var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+       padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; }
+.dots { display: flex; gap: 5px; margin-left: auto; flex-wrap: wrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); border: 0; padding: 0; cursor: pointer; }
+.dot.on { background: var(--accent); }
+.pill { display: inline-block; font-family: var(--mono); font-size: .72rem; padding: 1px 7px; border-radius: 999px; color: var(--on-accent); }
+.pill.pass { background: var(--pass); } .pill.fail { background: var(--fail); }
+
+/* 5: quality */
+.q-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line);
+          border-radius: 12px; overflow: hidden; background: var(--panel); }
+.q { padding: 16px 18px; display: grid; gap: 6px; align-content: start; min-width: 0;
+     border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.q:nth-child(3n) { border-right: 0; }
+.q:nth-last-child(-n+3) { border-bottom: 0; }
+.q .big { font-family: var(--display); font-size: 1.6rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.q b { font-family: var(--display); font-size: 1rem; }
+.q p { font-size: .88rem; color: var(--muted); }
+.q .mono { font-size: .74rem; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .q-grid { grid-template-columns: minmax(0, 1fr); }
+  .q, .q:nth-child(3n), .q:nth-last-child(-n+3) { border-right: 0; border-bottom: 1px solid var(--line); }
+  .q:last-child { border-bottom: 0; }
+}
+.report-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 940px) { .report-grid { grid-template-columns: minmax(0, 1fr); } }
+.report .v { color: var(--fail); font-weight: 500; }
+.report .d { color: var(--vlan20); }
+ol.parts { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; font-size: .9rem; }
+ol.parts b { font-family: var(--display); }
+
+/* 6: status */
+table.status-t { width: 100%; border-collapse: collapse; font-size: .9rem; }
+table.status-t th, table.status-t td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.status-t th { color: var(--muted); font-weight: 500; font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; }
+table.status-t td:first-child { font-family: var(--display); font-weight: 600; white-space: nowrap; }
 .refs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 @media (max-width: 860px) { .refs { grid-template-columns: minmax(0, 1fr); } }
-.refs .panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; }
-ol.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
 .copy { float: right; font: 500 .74rem var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--muted);
         border-radius: 6px; padding: 2px 8px; cursor: pointer; }
-.note { font-size: .84rem; color: var(--muted); }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+ol.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">netcheck-lab · campus-mini · local backend</div>
-    <h1>How a test reaches the network</h1>
-    <p class="lede">The local backend has no HTTP API. Each test calls Python objects, and those objects run
-      commands inside the lab containers with <code>docker exec</code> and parse the JSON that comes back.
-      Pick a test on the right and step through it, or click any device on the map to see what the framework can do with it.</p>
+    <div class="eyebrow">netcheck-lab · walkthrough</div>
+    <h1>Test the network against what it must do</h1>
+    <p class="lede">An intent-driven network test framework. One YAML file says what the network must do. The framework builds
+      the lab from it, tests the live network against it, and explains every failure in terms of the intent that was
+      violated. The same tests run on FRR in Containerlab and on NVIDIA Cumulus Linux.</p>
+    <nav class="stops" aria-label="Walkthrough stops">
+      <a href="#what"><b>1</b>What it is</a>
+      <a href="#components"><b>2</b>Key components</a>
+      <a href="#lab"><b>3</b>The lab</a>
+      <a href="#trace"><b>4</b>A test, step by step</a>
+      <a href="#quality"><b>5</b>How the tests are tested</a>
+      <a href="#status"><b>6</b>Status and next</a>
+    </nav>
   </header>
 
-  <section aria-label="Layers">
+  <!-- 1 ---------------------------------------------------------------- -->
+  <section class="stop" id="what">
+    <div class="stop-head"><span class="stop-num">1</span><h2>What it is</h2>
+      <p class="note">From one file to a verdict that names the broken intent.</p></div>
+    <div class="flow">
+      <div class="f"><b>Intent</b><span class="mono">intent/lab.yaml</span>
+        <p>Nodes, links, VLANs, OSPF timers, and the promises: which hosts reach each other, which stay isolated.</p></div>
+      <div class="f"><b>Build</b><span class="mono">render.py · expected.py</span>
+        <p>Topology and device configs, plus the expected state: VLANs per port, adjacencies per link, routes per router.</p></div>
+      <div class="f"><b>Deploy</b><span class="mono">backends/ · labstate.py</span>
+        <p>Brings the lab up once per session and saves a baseline snapshot right after a real deploy.</p></div>
+      <div class="f"><b>Test</b><span class="mono">tests/lab · steps.py</span>
+        <p>Cases generated from the intent. Every test runs between a snapshot and a restore.</p></div>
+      <div class="f"><b>Explain</b><span class="mono">report.py · artifacts/</span>
+        <p>Verdict, expected vs actual, the drifted setting, evidence, packet capture, repro command.</p></div>
+    </div>
+    <div class="claims">
+      <div><b>It proves the intent</b><p>Isolation, reachability, adjacency per link, learned routes, failover with a measured outage, and drift between live state and intent.</p></div>
+      <div><b>Same tests, two backends</b><p>Tests talk to capabilities (Ospf, Bridge, Links, Shell), never to a device CLI. The backend decides how to answer.</p></div>
+      <div><b>Every failure explains itself</b><p>Reports point at the root cause (<code>sw1:p3</code> in the wrong VLAN), not at a ping that failed.</p></div>
+    </div>
+    <p class="say">One YAML file is the source of truth. The topology, the configs, the test cases and the expected state are all generated from it, so the tests can't drift from the design.</p>
+  </section>
+
+  <!-- 2 ---------------------------------------------------------------- -->
+  <section class="stop" id="components">
+    <div class="stop-head"><span class="stop-num">2</span><h2>Key components</h2>
+      <p class="note">Top to bottom is the path of a test call. Pick a block to see its files and what to say about it.</p></div>
+    <div class="arch-grid">
+      <div class="panel arch" id="arch">
+        <div class="row"><div class="lane">Source</div><div class="cells">
+          <button class="blk" type="button" data-blk="intent"><b>Intent</b><span>intent.py</span></button>
+          <button class="blk" type="button" data-blk="expected"><b>Expected state</b><span>expected.py</span></button>
+        </div></div>
+        <div class="row"><div class="lane">Tests</div><div class="cells">
+          <button class="blk" type="button" data-blk="tests"><b>Lab tests</b><span>tests/lab · steps.py</span></button>
+        </div></div>
+        <div class="row"><div class="lane">Checks</div><div class="cells">
+          <button class="blk" type="button" data-blk="assertions"><b>Domain assertions</b><span>assertions/</span></button>
+          <button class="blk" type="button" data-blk="report"><b>Failure report</b><span>report.py</span></button>
+        </div></div>
+        <div class="row"><div class="lane">Lifecycle</div><div class="cells">
+          <button class="blk" type="button" data-blk="lifecycle"><b>Test run</b><span>pytest_plugin.py · testrun.py · cleanup.py</span></button>
+        </div></div>
+        <div class="row"><div class="lane">Capabilities</div><div class="cells">
+          <button class="blk" type="button" data-blk="caps"><b>Ospf · Bridge · Links · Shell · Snapshot</b><span>capabilities.py · assembly.py · ports.py</span></button>
+        </div></div>
+        <div class="row"><div class="lane">Backends</div><div class="cells">
+          <button class="blk local" type="button" data-blk="local"><b>Local</b><span>docker exec · FRR · Linux bridge</span></button>
+          <button class="blk nvidia" type="button" data-blk="nvidia"><b>NVIDIA</b><span>NVUE REST · Cumulus · DSX Air</span></button>
+        </div></div>
+        <div class="row"><div class="lane">Cross-cutting</div><div class="cells">
+          <button class="blk side" type="button" data-blk="timing"><b>Timing</b><span>timing.yaml</span></button>
+          <button class="blk side" type="button" data-blk="logs"><b>Device log</b><span>devicelog.py</span></button>
+          <button class="blk side" type="button" data-blk="faults"><b>Faults</b><span>faults.py</span></button>
+        </div></div>
+      </div>
+      <div class="panel stack" id="blk-detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- 3 ---------------------------------------------------------------- -->
+  <section class="stop" id="lab">
+    <div class="stop-head"><span class="stop-num">3</span><h2>The lab: campus-mini</h2>
+      <p class="note">Seven nodes. Click a device; switch the backend to see what changes and what stays the same.</p></div>
+    <div class="main">
+      <div class="panel stack">
+        <div class="toolbar">
+          <div class="seg" role="group" aria-label="Backend">
+            <button type="button" data-backend="local" aria-pressed="true">Local (Containerlab)</button>
+            <button type="button" data-backend="nvidia" aria-pressed="false">NVIDIA (DSX Air)</button>
+          </div>
+          <span class="note" id="backend-line"></span>
+        </div>
+        <div class="topo-scroll">
+          <svg class="topo" id="topo" viewBox="0 0 980 400" role="img" aria-label="Lab topology: three hosts on switch sw1, trunk to router r1, two links to router r2, host h4 behind r2">
+            <path class="link v10" data-link="h1-sw1" d="M120 70 L250 180"/>
+            <path class="link v10" data-link="h2-sw1" d="M120 200 L250 200"/>
+            <path class="link v20" data-link="h3-sw1" d="M120 330 L250 220"/>
+            <path class="link v10" data-link="sw1-r1" d="M330 196 L470 196"/>
+            <path class="link trunk2" data-link="sw1-r1" d="M330 204 L470 204"/>
+            <path class="link routed" data-link="primary" d="M550 180 C 610 110, 690 110, 750 180"/>
+            <path class="link routed" data-link="backup" d="M550 220 C 610 290, 690 290, 750 220"/>
+            <path class="link routed" data-link="r2-h4" d="M830 200 L860 200"/>
+            <text class="lbl" x="650" y="112" text-anchor="middle">primary · cost 10 · 10.0.12.0/31</text>
+            <text class="lbl" x="650" y="302" text-anchor="middle">backup · cost 100 · 10.0.12.2/31</text>
+            <text class="lbl" x="400" y="186" text-anchor="middle">trunk 10,20</text>
+            <text class="port" x="128" y="62">p1</text>
+            <text class="port" x="128" y="194">p1</text>
+            <text class="port" x="128" y="346">p1</text>
+            <text class="port" x="226" y="168">p1</text>
+            <text class="port" x="230" y="194">p2</text>
+            <text class="port" x="226" y="240">p3</text>
+            <text class="port" x="336" y="188">p4</text>
+            <text class="port" x="448" y="188">p1</text>
+            <text class="port" x="556" y="168">p2</text>
+            <text class="port" x="556" y="242">p3</text>
+            <text class="port" x="726" y="168">p1</text>
+            <text class="port" x="726" y="242">p2</text>
+            <text class="port" x="834" y="192">p3</text>
+            <g class="node" data-node="h1" tabindex="0" role="button" aria-label="h1 details"><rect x="30" y="44" width="90" height="52" rx="8"/><text x="45" y="68">h1</text><text class="sub" x="45" y="86">10.0.10.11</text></g>
+            <g class="node" data-node="h2" tabindex="0" role="button" aria-label="h2 details"><rect x="30" y="174" width="90" height="52" rx="8"/><text x="45" y="198">h2</text><text class="sub" x="45" y="216">10.0.10.12</text></g>
+            <g class="node" data-node="h3" tabindex="0" role="button" aria-label="h3 details"><rect x="30" y="304" width="90" height="52" rx="8"/><text x="45" y="328">h3</text><text class="sub" x="45" y="346">10.0.20.13</text></g>
+            <g class="node" data-node="sw1" tabindex="0" role="button" aria-label="sw1 details"><rect x="250" y="164" width="80" height="72" rx="8"/><text x="264" y="194">sw1</text><text class="sub" x="264" y="212" data-sub="sw1-a">br0</text><text class="sub" x="264" y="226" data-sub="sw1-b">bridge</text></g>
+            <g class="node" data-node="r1" tabindex="0" role="button" aria-label="r1 details"><rect x="470" y="164" width="80" height="72" rx="8"/><text x="484" y="194">r1</text><text class="sub" x="484" y="212">1.1.1.1</text><text class="sub" x="484" y="226" data-sub="r1-b">FRR</text></g>
+            <g class="node" data-node="r2" tabindex="0" role="button" aria-label="r2 details"><rect x="750" y="164" width="80" height="72" rx="8"/><text x="764" y="194">r2</text><text class="sub" x="764" y="212">2.2.2.2</text><text class="sub" x="764" y="226" data-sub="r2-b">FRR</text></g>
+            <g class="node" data-node="h4" tabindex="0" role="button" aria-label="h4 details"><rect x="860" y="174" width="96" height="52" rx="8"/><text x="875" y="198">h4</text><text class="sub" x="875" y="216">10.0.30.14</text></g>
+          </svg>
+        </div>
+        <div class="legend">
+          <span><i style="border-color:var(--vlan10)"></i>VLAN 10 users (routed by r1)</span>
+          <span><i style="border-color:var(--vlan20)"></i>VLAN 20 isolated (no gateway)</span>
+          <span><i style="border-color:var(--routed)"></i>routed, OSPF area 0, hello 1 s / dead 4 s</span>
+        </div>
+      </div>
+      <div class="panel stack" id="detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- 4 ---------------------------------------------------------------- -->
+  <section class="stop" id="trace">
+    <div class="stop-head"><span class="stop-num">4</span><h2>A test, step by step</h2>
+      <p class="note">Each lab test is written as named steps. Pick a test and step through what happens at each layer. The backend switch in section 3 changes the commands shown.</p></div>
     <div class="layers" id="layers">
-      <div class="layer" data-layer="intent"><b>Intent</b><span>intent/lab.yaml</span></div>
-      <div class="layer" data-layer="fixture"><b>Fixture</b><span>pytest_plugin.py</span></div>
+      <div class="layer" data-layer="intent"><b>Intent</b><span>lab.expected</span></div>
+      <div class="layer" data-layer="lifecycle"><b>Lifecycle</b><span>testrun.py</span></div>
       <div class="layer" data-layer="assertion"><b>Assertion</b><span>assertions/</span></div>
       <div class="layer" data-layer="capability"><b>Capability</b><span>Ospf · Bridge · Links · Shell</span></div>
-      <div class="layer" data-layer="transport"><b>Transport</b><span>docker exec · logs every call</span></div>
-      <div class="layer" data-layer="device"><b>Device</b><span>clab-campus-mini-*</span></div>
+      <div class="layer" data-layer="transport"><b>Transport</b><span id="layer-transport">docker exec</span></div>
+      <div class="layer" data-layer="device"><b>Device</b><span id="layer-device">clab-campus-mini-*</span></div>
     </div>
-  </section>
-
-  <section class="main">
-    <div class="panel">
-      <div class="topo-scroll">
-        <svg class="topo" id="topo" viewBox="0 0 980 400" role="img" aria-label="Lab topology: three hosts on switch sw1, trunk to router r1, two links to router r2, host h4 behind r2">
-          <!-- links -->
-          <path class="link v10" data-link="h1-sw1" d="M120 70 L250 180"/>
-          <path class="link v10" data-link="h2-sw1" d="M120 200 L250 200"/>
-          <path class="link v20" data-link="h3-sw1" d="M120 330 L250 220"/>
-          <path class="link v10" data-link="sw1-r1" d="M330 196 L470 196"/>
-          <path class="link trunk2" data-link="sw1-r1" d="M330 204 L470 204"/>
-          <path class="link routed" data-link="primary" d="M550 180 C 610 110, 690 110, 750 180"/>
-          <path class="link routed" data-link="backup" d="M550 220 C 610 290, 690 290, 750 220" stroke-dasharray="2 0"/>
-          <path class="link routed" data-link="r2-h4" d="M830 200 L860 200"/>
-          <!-- link labels -->
-          <text class="lbl" x="650" y="112" text-anchor="middle">primary · cost 10 · 10.0.12.0/31</text>
-          <text class="lbl" x="650" y="302" text-anchor="middle">backup · cost 100 · 10.0.12.2/31</text>
-          <text class="lbl" x="400" y="186" text-anchor="middle">trunk 10,20</text>
-          <!-- ports -->
-          <text class="port" x="128" y="62">p1</text>
-          <text class="port" x="128" y="194">p1</text>
-          <text class="port" x="128" y="346">p1</text>
-          <text class="port" x="226" y="168">p1</text>
-          <text class="port" x="230" y="194">p2</text>
-          <text class="port" x="226" y="240">p3</text>
-          <text class="port" x="336" y="188">p4</text>
-          <text class="port" x="448" y="188">p1</text>
-          <text class="port" x="556" y="168">p2</text>
-          <text class="port" x="556" y="242">p3</text>
-          <text class="port" x="726" y="168">p1</text>
-          <text class="port" x="726" y="242">p2</text>
-          <text class="port" x="834" y="192">p3</text>
-          <!-- nodes -->
-          <g class="node" data-node="h1" tabindex="0" role="button" aria-label="h1 details"><rect x="30" y="44" width="90" height="52" rx="8"/><text x="45" y="68">h1</text><text class="sub" x="45" y="86">10.0.10.11</text></g>
-          <g class="node" data-node="h2" tabindex="0" role="button" aria-label="h2 details"><rect x="30" y="174" width="90" height="52" rx="8"/><text x="45" y="198">h2</text><text class="sub" x="45" y="216">10.0.10.12</text></g>
-          <g class="node" data-node="h3" tabindex="0" role="button" aria-label="h3 details"><rect x="30" y="304" width="90" height="52" rx="8"/><text x="45" y="328">h3</text><text class="sub" x="45" y="346">10.0.20.13</text></g>
-          <g class="node" data-node="sw1" tabindex="0" role="button" aria-label="sw1 details"><rect x="250" y="164" width="80" height="72" rx="8"/><text x="264" y="194">sw1</text><text class="sub" x="264" y="212">br0</text><text class="sub" x="264" y="226">switch</text></g>
-          <g class="node" data-node="r1" tabindex="0" role="button" aria-label="r1 details"><rect x="470" y="164" width="80" height="72" rx="8"/><text x="484" y="194">r1</text><text class="sub" x="484" y="212">1.1.1.1</text><text class="sub" x="484" y="226">FRR</text></g>
-          <g class="node" data-node="r2" tabindex="0" role="button" aria-label="r2 details"><rect x="750" y="164" width="80" height="72" rx="8"/><text x="764" y="194">r2</text><text class="sub" x="764" y="212">2.2.2.2</text><text class="sub" x="764" y="226">FRR</text></g>
-          <g class="node" data-node="h4" tabindex="0" role="button" aria-label="h4 details"><rect x="860" y="174" width="96" height="52" rx="8"/><text x="875" y="198">h4</text><text class="sub" x="875" y="216">10.0.30.14</text></g>
-        </svg>
-      </div>
-      <div class="legend">
-        <span><i style="border-color:var(--vlan10)"></i>VLAN 10 users</span>
-        <span><i style="border-color:var(--vlan20)"></i>VLAN 20 isolated</span>
-        <span><i style="border-color:var(--routed)"></i>routed / OSPF</span>
-        <span>p1, p2… are logical ports; locally p1 = eth1</span>
-      </div>
-    </div>
-
-    <div class="panel" aria-live="polite">
-      <div class="eyebrow">Step through a test</div>
-      <div class="tabs" role="tablist" id="tabs"></div>
-      <div class="testid" id="testid"></div>
-      <div class="step-head">
-        <div>
-          <div class="step-title" id="stitle"></div>
-          <div class="step-layer" id="slayer"></div>
+    <div class="main">
+      <div class="panel stack" aria-live="polite">
+        <div class="tabs" role="tablist" id="tabs"></div>
+        <div class="testid" id="testid"></div>
+        <div class="step-head">
+          <div>
+            <div class="step-title" id="stitle"></div>
+            <div class="step-tag"><span class="step-layer" id="slayer"></span></div>
+          </div>
+          <div class="step-count" id="scount"></div>
         </div>
-        <div class="step-count" id="scount"></div>
+        <div class="step-body" id="sbody"></div>
+        <div class="nav">
+          <button class="btn" id="prev" type="button">Back</button>
+          <button class="btn primary" id="next" type="button">Next step</button>
+          <div class="dots" id="dots"></div>
+        </div>
       </div>
-      <div class="step-body" id="sbody"></div>
-      <div class="nav">
-        <button class="btn" id="prev" type="button">Back</button>
-        <button class="btn primary" id="next" type="button">Next step</button>
-        <div class="dots" id="dots"></div>
+      <div class="panel stack">
+        <div class="eyebrow">What the test file says</div>
+        <pre id="steplist"></pre>
+        <p class="note">This is what <code>make test-lab-live</code> prints while the test runs. A failure report starts with the same list, the failing step marked <code>FAILED</code>.</p>
       </div>
     </div>
   </section>
 
-  <section class="panel" id="detail-panel">
-    <div class="eyebrow">Device</div>
-    <div class="detail" id="detail"></div>
+  <!-- 5 ---------------------------------------------------------------- -->
+  <section class="stop" id="quality">
+    <div class="stop-head"><span class="stop-num">5</span><h2>How the tests are tested</h2>
+      <p class="note">A network test that passes for the wrong reason is worse than none. These are the checks on the checks.</p></div>
+    <div class="q-grid">
+      <div class="q"><span class="big">164</span><b>Unit tests, no lab</b>
+        <p>Parsers, expected state, assertions, reports, cleanup and timing, over fake transports and a fake lab. Seconds to run.</p>
+        <span class="mono">make check · tests/unit</span></div>
+      <div class="q"><span class="big">16 / 16</span><b>Real lab tests on a fake lab</b>
+        <p>pytester runs the actual <code>tests/lab</code> files against a healthy fake lab, and against broken ones to prove they fail with the right report.</p>
+        <span class="mono">test_review_fixes.py</span></div>
+      <div class="q"><span class="big">10</span><b>Lab tests on NVUE responses</b>
+        <p>Smoke, OSPF and drift tests pass unchanged when routers and the switch answer in Cumulus NVUE JSON. A contract test checks both parsers give identical OSPF settings for the same intent.</p>
+        <span class="mono">test_nvue.py · fixtures/nvue/</span></div>
+      <div class="q"><span class="big">67%</span><b>Mutation testing</b>
+        <p>mutmut changed the code 5,476 times; 67.2% of the mutants were caught. The opt-in lab profile found two isolation gaps that are now closed: link restores weren't verified, and mutants started from a dirty lab.</p>
+        <span class="mono">make mutate · make mutate-lab</span></div>
+      <div class="q"><span class="big">2</span><b>Demo faults</b>
+        <p>Each one breaks a single intent: h3's port in the wrong VLAN, r2's LAN out of OSPF. The suite must fail and name the cause.</p>
+        <span class="mono">make fault-wrong-vlan · make fault-missing-ospf</span></div>
+      <div class="q"><span class="big">2 jobs</span><b>CI on every push</b>
+        <p><code>checks</code>: ruff, mypy, unit tests. <code>lab</code>: Containerlab inside the GitHub runner, full lab suite, JUnit check run, reports and pcaps uploaded. SLAs recorded, not enforced, on shared runners.</p>
+        <span class="mono">.github/workflows/ci.yml</span></div>
+    </div>
+
+    <div class="report-grid">
+      <div class="panel stack">
+        <div class="eyebrow">A real failure report (wrong-VLAN fault)</div>
+<pre class="report"><span class="v">INTENT VIOLATED: h1 (VLAN 10) and h3 (VLAN 20) must be isolated</span>
+
+Expected: 0/20 ICMP replies h1 -> h3 over L2
+Actual:   20/20 replies
+
+Intent vs live:
+  sw1:p1: expected 'access VLAN 10', actual 'access VLAN 10'
+<span class="d">  sw1:p3: expected 'access VLAN 20', actual 'access VLAN 10'   &lt;-- drift</span>
+
+Evidence:
+  sw1 VLAN membership:
+    VLAN 10: p1, p2, p3, p4
+    VLAN 20: p4
+  h1 neighbor table:
+    10.0.20.13 lladdr aa:c1:ab:18:14:1d REACHABLE
+
+Capture (summary):
+  h3:p1
+  ARP, Request who-has 10.0.20.13 tell 10.0.10.11
+  ARP, Reply 10.0.20.13 is-at aa:c1:ab:18:14:1d
+  IP 10.0.10.11 > 10.0.20.13: ICMP echo request, seq 1
+  IP 10.0.20.13 > 10.0.10.11: ICMP echo reply, seq 1
+  file: artifacts/&lt;test-id&gt;/h3-p1.pcap
+
+Env: topology=campus-mini  backend=local  intent=61de9bdddff0
+     containerlab=0.76.0  image.router=quay.io/frrouting/frr:10.1.0
+Repro: pytest '...isolated[h1-h3]' --backend local --snapshot &lt;id&gt;
+Restore state: python -m netcheck restore &lt;id&gt;</pre>
+      </div>
+      <div class="panel stack">
+        <h3>How to read it</h3>
+        <ol class="parts">
+          <li><b>Verdict</b> names the intent, in the intent's words.</li>
+          <li><b>Expected and actual</b> as numbers: 0 of 20 replies wanted, 20 got.</li>
+          <li><b>Intent vs live</b> diffs the state the verdict depends on and marks the drift: the root cause.</li>
+          <li><b>Evidence</b> is collected before the verdict, so it shows the lab at the moment of failure.</li>
+          <li><b>Capture</b> proves it on the wire: h1 and h3 now share a broadcast domain.</li>
+          <li><b>Commands</b> run by the test are in <code>logs/&lt;device&gt;.jsonl</code> with raw replies.</li>
+          <li><b>Environment</b>: backend, intent digest, image versions.</li>
+          <li><b>Repro</b>: one command restores the exact snapshot and reruns the test.</li>
+        </ol>
+        <p class="say">The report is designed for the person on call: it says which intent broke, where, and how to reproduce it, without opening the test code.</p>
+      </div>
+    </div>
   </section>
 
-  <section class="refs">
-    <div class="panel">
-      <h2>Use the backend yourself</h2>
-      <p>The closest thing to an API is the Python object model. Open a shell in the repo (inside the VM) and call it
-        directly. Every call runs a real command in a container and returns parsed data, the same calls the tests make.</p>
-      <div><button class="copy" type="button" data-copy="repl-clean">Copy</button>
+  <!-- 6 ---------------------------------------------------------------- -->
+  <section class="stop" id="status">
+    <div class="stop-head"><span class="stop-num">6</span><h2>Status and next</h2>
+      <p class="note">What runs today, and what is designed but not built.</p></div>
+    <div class="panel tbl-scroll">
+      <table class="status-t">
+        <thead><tr><th>Part</th><th>State</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Framework core</td><td><span class="status done">done</span></td>
+            <td>Intent, expected state, assertions, reports, steps and soft steps, cleanup, timing. Unit-tested.</td></tr>
+          <tr><td>Local backend</td><td><span class="status done">done</span></td>
+            <td>Verified on a real lab (Containerlab 0.76, FRR 10.1, Apple Silicon via OrbStack) and in GitHub Actions. Next: pin the switch and host images by digest.</td></tr>
+          <tr><td>NVIDIA, device side</td><td><span class="status partial">built, offline</span></td>
+            <td>NVUE responses parsed into the same types as FRR; changes through the NVUE revision flow. Tested on JSON samples built from the NVIDIA docs, still to be replaced by responses captured from a real switch.</td></tr>
+          <tr><td>NVIDIA, lab side</td><td><span class="status planned">specified</span></td>
+            <td>Requirements and a phased plan: spikes on a real DSX Air simulation, Air API client, topology and NVUE config from the intent, SSH through the <code>oob-mgmt-server</code>, NVUE snapshots, live runs, a measured timing profile, a CI job.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="refs">
+      <div class="panel stack">
+        <h3>Design decisions (docs/decisions/)</h3>
+        <ol class="plain">
+          <li>Two backends, one intent</li>
+          <li>Composition: transports and capabilities</li>
+          <li>Deploy once; snapshot and cleanup registry per test</li>
+          <li>Thresholds from protocol timers; SLA vs timeout</li>
+          <li>Failure reporting</li>
+          <li>pytest, not pyATS; soft steps borrowed from it</li>
+        </ol>
+        <p class="note">New features go requirements → implementation plan → implementation → review → plan check, with Claude Code agents for each stage (<code>.claude/agents/</code>).</p>
+      </div>
+      <div class="panel stack">
+        <h3>Use the backend yourself</h3>
+        <p class="note">The object model is the API. In the repo, inside the VM, with the lab up:</p>
+        <div><button class="copy" type="button" data-copy="repl-clean">Copy</button>
 <pre id="repl">uv run python
 >>> from pathlib import Path
 >>> from netcheck.intent import load_intent
@@ -261,10 +561,7 @@ ol.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
  OspfNeighbor(router_id='2.2.2.2', state='Full', port='p3')]
 >>> devs["sw1"].bridge.vlan_membership()["p3"]
 PortVlans(mode='access', vlans=(20,))
->>> devs["h1"].shell.ping("10.0.30.14", count=3)
-PingResult(src='h1', dst='10.0.30.14', sent=3, received=3, ...)
->>> devs["r1"].log.summary()          # every command that ran
-["[r1] exec: vtysh -c 'show ip ospf neighbor json' rc=0 (0.05s)", ...]</pre></div>
+>>> devs["r1"].log.summary()   # every command that ran</pre></div>
 <pre id="repl-clean" hidden>from pathlib import Path
 from netcheck.intent import load_intent
 from netcheck.backends import get_backend
@@ -272,196 +569,312 @@ lab = get_backend("local", load_intent("intent/lab.yaml"), Path("."))
 devs = lab.devices()
 devs["r1"].ospf.neighbors()
 devs["sw1"].bridge.vlan_membership()["p3"]
-devs["h1"].shell.ping("10.0.30.14", count=3)
 devs["r1"].log.summary()</pre>
-      <p class="note">Copy gives you the commands without the <code>&gt;&gt;&gt;</code> prompts; paste them after starting <code>uv run python</code>. Outputs above show the shape of what comes back on a healthy lab; your values will match your lab.
-        Calls that change state (<code>links.set_link</code>, <code>bridge.set_access_vlan</code>) are real: finish with
-        <code>make lab-reset</code>.</p>
-    </div>
-
-    <div class="panel">
-      <h2>See the live lab</h2>
-      <p>Containerlab can draw the running topology in a browser. In the VM:</p>
-      <div><button class="copy" type="button" data-copy="graph">Copy</button>
-<pre id="graph">sudo containerlab graph -t build/campus-mini/campus-mini.clab.yml</pre></div>
-      <p>It serves the graph on port 50080. With OrbStack, open <code>http://netlab.orb.local:50080</code> on your Mac.</p>
-      <h3>Look at what a test looked at</h3>
-      <ol class="plain">
-        <li><code>build/campus-mini/expected_state.json</code>: what tests assert against</li>
-        <li><code>.netcheck/snapshots/&lt;id&gt;.json</code>: the state saved before each test</li>
-        <li><code>artifacts/&lt;test&gt;/logs/&lt;device&gt;.jsonl</code>: every command a failed test ran, with the raw reply</li>
-        <li><code>artifacts/&lt;test&gt;/*.pcap</code>: open in Wireshark</li>
-      </ol>
-      <h3>The NVIDIA backend</h3>
-      <p>On Cumulus, the same capabilities would call the NVUE REST API (port 8765) instead of <code>docker exec</code>.
-        Tests and assertions stay the same; only the bottom two layers change. That backend is not finished yet.</p>
+        <p class="note">Calls that change state (<code>links.set_link</code>, <code>bridge.set_access_vlan</code>) are real: finish with <code>make lab-reset</code>.</p>
+      </div>
     </div>
   </section>
 </div>
 
 <script>
-const NODES = {
-  h1: { role: "host", ip: "10.0.10.11/24", extra: "gateway 10.0.10.1 (r1)", caps: ["Shell", "Links"],
-        ports: [["p1", "eth1", "access port sw1:p1, VLAN 10"]],
-        tests: "isolation h1-h3, reachability h1-h2 and h1-h4, source of the failover ping stream",
-        try: 'docker exec clab-campus-mini-h1 ping -c3 10.0.30.14' },
-  h2: { role: "host", ip: "10.0.10.12/24", extra: "gateway 10.0.10.1 (r1)", caps: ["Shell", "Links"],
-        ports: [["p1", "eth1", "access port sw1:p2, VLAN 10"]],
-        tests: "isolation h2-h3, reachability h1-h2 and h2-h4",
-        try: 'docker exec clab-campus-mini-h2 ip -br addr' },
-  h3: { role: "host", ip: "10.0.20.13/24", extra: "no gateway: VLAN 20 is not routed", caps: ["Shell", "Links"],
-        ports: [["p1", "eth1", "access port sw1:p3, VLAN 20"]],
-        tests: "isolation h1-h3 and h2-h3 (packet capture runs here)",
-        try: 'docker exec clab-campus-mini-h3 ip route' },
-  h4: { role: "host", ip: "10.0.30.14/24", extra: "gateway 10.0.30.1 (r2)", caps: ["Shell", "Links"],
-        ports: [["p1", "eth1", "LAN behind r2"]],
-        tests: "reachability h1-h4 and h2-h4, destination of the failover ping stream",
-        try: 'docker exec clab-campus-mini-h4 ip -br addr' },
-  sw1: { role: "switch", ip: "none (layer 2 only)", extra: "Linux bridge br0 with VLAN filtering", caps: ["Bridge", "Links", "Shell"],
-        ports: [["p1", "eth1", "access VLAN 10 → h1"], ["p2", "eth2", "access VLAN 10 → h2"],
-                ["p3", "eth3", "access VLAN 20 → h3"], ["p4", "eth4", "trunk VLAN 10, 20 → r1"]],
-        tests: "VLAN drift check, evidence for every isolation failure; the wrong-VLAN fault changes p3 here",
-        try: 'docker exec clab-campus-mini-sw1 bridge vlan show' },
-  r1: { role: "router", ip: "router ID 1.1.1.1", extra: "gateway for VLAN 10 on eth1.10 (10.0.10.1/24)", caps: ["Ospf", "Links"],
-        ports: [["p1", "eth1", "trunk from sw1; sub-interface eth1.10 is the VLAN 10 gateway"],
-                ["p2", "eth2", "primary to r2, 10.0.12.0/31, OSPF cost 10"],
-                ["p3", "eth3", "backup to r2, 10.0.12.2/31, OSPF cost 100"]],
-        tests: "adjacency r1-r2 primary and backup, route r1 → 10.0.30.0/24, failover (eth2 is taken down)",
-        try: 'docker exec clab-campus-mini-r1 vtysh -c "show ip ospf neighbor"' },
-  r2: { role: "router", ip: "router ID 2.2.2.2", extra: "advertises its LAN 10.0.30.0/24 (passive interface)", caps: ["Ospf", "Links"],
-        ports: [["p1", "eth1", "primary to r1, 10.0.12.1/31"], ["p2", "eth2", "backup to r1, 10.0.12.3/31"],
-                ["p3", "eth3", "LAN to h4, 10.0.30.1/24, OSPF passive"]],
-        tests: "adjacency r2-r1 primary and backup, route r2 → 10.0.10.0/24; the missing-OSPF fault changes eth3 here",
-        try: 'docker exec clab-campus-mini-r2 vtysh -c "show ip route"' },
+/* ---------- 2: components ---------- */
+const BLOCKS = {
+  intent: { t: "Intent", files: "intent/lab.yaml · netcheck/intent.py", status: "done",
+    p: "The single source of truth: nodes and roles, links with logical ports (p1, p2), VLANs, OSPF settings, and the expectations (reachable pairs, isolated pairs). Loading validates everything and lists every problem at once.",
+    pts: ["Logical ports keep the intent backend-neutral: p1 is eth1 locally and swp1 on Cumulus.", "Changing the intent changes the lab, the configs and the test cases together."] },
+  expected: { t: "Expected state", files: "netcheck/expected.py", status: "done",
+    p: "Answers questions about the intent in the same types the capabilities return: VLAN membership per switch port, OSPF adjacencies per link, routes per router, the failover plan, host attachments. Also written to expected_state.json.",
+    pts: ["Tests compare like with like: PortVlans against PortVlans.", "Parametrization comes from here: 4 adjacency cases because r1 and r2 share two links."] },
+  tests: { t: "Lab tests", files: "tests/lab/*.py · netcheck/steps.py", status: "done",
+    p: "16 tests in four markers: smoke, functional, resilience, drift. Each is a list of named steps. Soft steps (continue_on_failure=True) check independent items, such as every switch port, and report all failures at the end.",
+    pts: ["No hard-coded names or addresses: everything comes from lab.expected.", "Soft steps are the one idea borrowed from pyATS (ADR-0006)."] },
+  assertions: { t: "Domain assertions", files: "netcheck/assertions/ (l2, ospf, reachability, common)", status: "done",
+    p: "assert_isolated, assert_ospf_neighbor_full, assert_route_present, check_port_vlans and others. They poll where the network needs time, collect evidence before deciding, and raise an IntentViolation carrying a FailureReport.",
+    pts: ["Polling with timeouts from timing.yaml, never fixed sleeps.", "They separate causes: 'adjacency down' vs 'adjacency Full but prefix not advertised'."] },
+  report: { t: "Failure report", files: "netcheck/report.py", status: "done",
+    p: "Eight parts: verdict, expected/actual, intent-vs-live drift, evidence, capture, commands, environment, repro. Rendered to the console, report.txt and report.json, and JUnit XML.",
+    pts: ["Evidence collection is guarded: if it fails, the report says so instead of hiding the verdict."] },
+  lifecycle: { t: "Test run", files: "pytest_plugin.py · testrun.py · cleanup.py · labstate.py", status: "done",
+    p: "The lab is deployed once per session. Each test gets a TestRun: snapshot before, a LIFO cleanup registry for its own changes, restore after. If the restore fails the run stops with exit code 3, so later tests can't be blamed for a broken lab.",
+    pts: ["Baseline only after a real deploy, so a leftover fault can never become the baseline.", "Lab tests refuse pytest-xdist: one lab, run serially."] },
+  caps: { t: "Capabilities", files: "capabilities.py · assembly.py · ports.py · device.py", status: "done",
+    p: "A Device holds capabilities: Ospf, Bridge, Links, Shell, Snapshot. They return normalized types (OspfNeighbor, Route, PortVlans, LinkState, PingResult). One table says which role may have which capability; each backend provides what it can.",
+    pts: ["Composition, not inheritance: a router is just a device with Links, Ospf and Snapshot.", "A test needing a capability a backend lacks is skipped, not failed."] },
+  local: { t: "Local backend", files: "backends/local.py · transport/docker_exec.py · render.py", status: "done",
+    p: "Containerlab with FRR routers, a Linux-bridge switch and Linux hosts. Commands run with docker exec and answer in JSON (vtysh json, ip -j, bridge -j). Snapshots cover links, FRR config, switch VLANs and host routes; restores apply only differences and verify them.",
+    pts: ["Runs on a laptop (OrbStack VM on a Mac) and in GitHub Actions.", "Detects a degraded lab (containers restarted, links lost) and redeploys."] },
+  nvidia: { t: "NVIDIA backend", files: "backends/nvidia_air.py · transport/nvue_rest.py", status: "partial",
+    p: "Cumulus Linux on NVIDIA DSX Air over the NVUE REST API. Built: parsers for OSPF neighbors, routes and interface settings, bridge VLANs and links, and config changes through the NVUE revision flow (create, patch, apply, wait). Planned: creating the simulation, SSH through the oob-mgmt-server, revision snapshots.",
+    pts: ["Parsers are strict: an unknown response shape raises instead of returning 'no routes'.", "pyATS/Genie was considered: it has no FRR, Cumulus or NVUE parsers (ADR-0006)."] },
+  timing: { t: "Timing", files: "timing.yaml · netcheck/timing.py · convergence.py", status: "done",
+    p: "A timeout and an SLA per check and per backend, derived from protocol timers (dead_interval + 2). Failover outage is measured with a 10 ms ping stream: lost packets × interval (RFC 6413).",
+    pts: ["NETCHECK_TIME_FACTOR scales timeouts; NETCHECK_SLA_MODE=record turns SLA breaches into warnings on CI."] },
+  logs: { t: "Device log", files: "netcheck/devicelog.py · transport/", status: "done",
+    p: "Every transport call is logged per device with its command, return code, duration and trimmed reply. A failed test's report includes only its own calls; the full log goes to artifacts/<test>/logs/.",
+    pts: ["Secrets are redacted in NVUE requests."] },
+  faults: { t: "Faults", files: "netcheck/faults.py · Makefile", status: "done",
+    p: "Two demo faults, each breaking exactly one intent: wrong-vlan moves h3's port into VLAN 10; missing-ospf-network takes r2's LAN out of OSPF while adjacencies stay Full.",
+    pts: ["Every pytest run warns in its header while a fault is applied, until make lab-reset."] },
 };
+const STATUS_LABEL = { done: "done", partial: "device side built, lab side planned", planned: "planned" };
 
-const SNAPSHOT_STEP = {
-  t: "Snapshot before the test", layer: "fixture", nodes: ["h1","h2","h3","h4","sw1","r1","r2"], links: [],
-  p: "The autouse fixture <code>_isolate</code> saves the lab state before the test body runs: link up/down on every port, the FRR config of each router, the VLANs of each switch port and each host's routes. If restoring it afterwards fails, the run stops rather than continuing on a broken lab. It is written to <code>.netcheck/snapshots/&lt;id&gt;.json</code>, and the ID goes into any failure report.",
-  code: "ip -j link show              # one call per node, all ports\nvtysh -c 'show running-config'   # r1, r2\nbridge -j vlan show         # sw1\nip -j route show            # every host",
-  where: "netcheck/pytest_plugin.py · _isolate → LocalBackend.snapshot()"
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+const $ = (s, el = document) => el.querySelector(s);
+
+function showBlock(key) {
+  const b = BLOCKS[key];
+  document.querySelectorAll(".blk").forEach(el => el.setAttribute("aria-pressed", String(el.dataset.blk === key)));
+  $("#blk-detail").innerHTML = `
+    <div class="eyebrow">Component</div>
+    <h3>${esc(b.t)}</h3>
+    <span class="status ${b.status}">${STATUS_LABEL[b.status]}</span>
+    <p>${esc(b.p)}</p>
+    <dl class="kv"><dt>Files</dt><dd class="mono">${esc(b.files)}</dd></dl>
+    <ul class="plain">${b.pts.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+}
+document.querySelectorAll(".blk").forEach(el => el.addEventListener("click", () => showBlock(el.dataset.blk)));
+
+/* ---------- 3: lab map ---------- */
+let backend = "local";
+const BACKEND = {
+  local: { prefix: "eth", line: "docker exec into clab-campus-mini-<node>, JSON replies",
+           transport: "docker exec", device: "clab-campus-mini-*", nos: "FRR", bridge: "br0" },
+  nvidia: { prefix: "swp", line: "NVUE REST on port 8765 for switches and routers; hosts over SSH (planned)",
+            transport: "NVUE REST · SSH", device: "Cumulus VX · Ubuntu", nos: "Cumulus", bridge: "br_default" },
 };
+const NODES = {
+  h1: { role: "host", ip: "10.0.10.11/24", extra: "gateway 10.0.10.1 (r1)", caps: ["Links", "Shell", "Snapshot"],
+        ports: [["p1", "access port sw1:p1, VLAN 10"]],
+        tests: "isolation h1-h3, reachability to h2 and h4, source of the failover ping stream",
+        local: "docker exec clab-campus-mini-h1 ping -c3 10.0.30.14",
+        nvidia: "ssh h1 'ping -c3 10.0.30.14'          # through the oob-mgmt-server (planned)" },
+  h2: { role: "host", ip: "10.0.10.12/24", extra: "gateway 10.0.10.1 (r1)", caps: ["Links", "Shell", "Snapshot"],
+        ports: [["p1", "access port sw1:p2, VLAN 10"]],
+        tests: "isolation h2-h3, reachability to h1 and h4",
+        local: "docker exec clab-campus-mini-h2 ip -br addr",
+        nvidia: "ssh h2 'ip -br addr'                  # planned" },
+  h3: { role: "host", ip: "10.0.20.13/24", extra: "no gateway: VLAN 20 is not routed", caps: ["Links", "Shell", "Snapshot"],
+        ports: [["p1", "access port sw1:p3, VLAN 20"]],
+        tests: "isolation h1-h3 and h2-h3 (the packet capture runs here)",
+        local: "docker exec clab-campus-mini-h3 ip route",
+        nvidia: "ssh h3 'ip route'                     # planned" },
+  h4: { role: "host", ip: "10.0.30.14/24", extra: "gateway 10.0.30.1 (r2)", caps: ["Links", "Shell", "Snapshot"],
+        ports: [["p1", "LAN behind r2"]],
+        tests: "reachability from h1 and h2, destination of the failover ping stream",
+        local: "docker exec clab-campus-mini-h4 ip -br addr",
+        nvidia: "ssh h4 'ip -br addr'                  # planned" },
+  sw1: { role: "switch", ip: "none (layer 2 only)", extra: "VLAN-aware bridge", caps: ["Links", "Bridge", "Shell", "Snapshot"],
+        ports: [["p1", "access VLAN 10 → h1"], ["p2", "access VLAN 10 → h2"], ["p3", "access VLAN 20 → h3"], ["p4", "trunk VLAN 10, 20 → r1"]],
+        tests: "VLAN drift (one soft step per port, plus unplanned ports), evidence for every isolation failure; the wrong-VLAN fault changes p3 here",
+        local: "docker exec clab-campus-mini-sw1 bridge -j vlan show",
+        nvidia: "GET /nvue_v1/interface?rev=operational\nGET /nvue_v1/bridge/domain/br_default?rev=operational" },
+  r1: { role: "router", ip: "router ID 1.1.1.1", extra: "VLAN 10 gateway on sub-interface p1.10 (10.0.10.1/24)", caps: ["Links", "Ospf", "Snapshot"],
+        ports: [["p1", "trunk from sw1; p1.10 is the VLAN 10 gateway"], ["p2", "primary to r2, 10.0.12.0/31, OSPF cost 10"], ["p3", "backup to r2, 10.0.12.2/31, OSPF cost 100"]],
+        tests: "adjacency to r2 on both links, route to 10.0.30.0/24, failover (p2 is taken down)",
+        local: "docker exec clab-campus-mini-r1 vtysh -c 'show ip ospf neighbor json'",
+        nvidia: "GET /nvue_v1/vrf/default/router/ospf/neighbor?rev=operational" },
+  r2: { role: "router", ip: "router ID 2.2.2.2", extra: "advertises its LAN 10.0.30.0/24 (passive interface)", caps: ["Links", "Ospf", "Snapshot"],
+        ports: [["p1", "primary to r1, 10.0.12.1/31"], ["p2", "backup to r1, 10.0.12.3/31"], ["p3", "LAN to h4, 10.0.30.1/24, OSPF passive"]],
+        tests: "adjacency to r1 on both links, route to 10.0.10.0/24; the missing-OSPF fault changes p3 here",
+        local: "docker exec clab-campus-mini-r2 vtysh -c 'show ip route ospf json'",
+        nvidia: "GET /nvue_v1/vrf/default/router/rib/ipv4/route?rev=operational" },
+};
+const svg = $("#topo");
+let selected = "r1";
+
+function realPort(p) { return p.replace(/^p(\d+)/, BACKEND[backend].prefix + "$1"); }
+
+function renderDetail(name) {
+  selected = name;
+  const n = NODES[name], b = BACKEND[backend];
+  svg.querySelectorAll(".node").forEach(el => el.classList.toggle("sel", el.dataset.node === name));
+  const rows = n.ports.map(([lp, what]) => `<tr><td>${lp}</td><td>${realPort(lp)}</td><td>${esc(what)}</td></tr>`).join("");
+  const where = backend === "local" ? `container <span class="mono">clab-campus-mini-${name}</span>`
+    : (n.role === "host" ? "Ubuntu VM in DSX Air" : "Cumulus Linux VM in DSX Air");
+  const planned = backend === "nvidia" && n.role === "host"
+    ? `<p class="planned-note">Hosts on DSX Air need the SSH transport, which is planned, not built.</p>` : "";
+  $("#detail").innerHTML = `
+    <div class="eyebrow">Device</div>
+    <h3>${name} <span class="note">· ${n.role} · ${where}</span></h3>
+    <dl class="kv">
+      <dt>Address</dt><dd>${esc(n.ip)}</dd>
+      <dt>Notes</dt><dd>${esc(n.extra)}</dd>
+      <dt>Capabilities</dt><dd><div class="caps">${n.caps.map(c => `<span class="cap">${c}</span>`).join("")}</div></dd>
+      <dt>Used by tests</dt><dd>${esc(n.tests)}</dd>
+    </dl>
+    <div class="tbl-scroll"><table class="ports"><thead><tr><th>Logical</th><th>${backend === "local" ? "Local" : "Cumulus"}</th><th>Connects to</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="stack" style="gap:6px"><div class="eyebrow">What the framework sends</div><pre>${esc(n[backend])}</pre></div>
+    ${planned}`;
+}
+
+function setBackend(name) {
+  backend = name;
+  const b = BACKEND[name];
+  document.querySelectorAll(".seg button").forEach(el => el.setAttribute("aria-pressed", String(el.dataset.backend === name)));
+  $("#backend-line").textContent = b.line;
+  $("#layer-transport").textContent = b.transport;
+  $("#layer-device").textContent = b.device;
+  svg.querySelector('[data-sub="sw1-a"]').textContent = b.bridge;
+  svg.querySelector('[data-sub="r1-b"]').textContent = b.nos;
+  svg.querySelector('[data-sub="r2-b"]').textContent = b.nos;
+  svg.querySelector('[data-sub="sw1-b"]').textContent = name === "local" ? "bridge" : "Cumulus";
+  renderDetail(selected);
+  render();
+}
+document.querySelectorAll(".seg button").forEach(el => el.addEventListener("click", () => setBackend(el.dataset.backend)));
+svg.querySelectorAll(".node").forEach(el => {
+  const go = () => renderDetail(el.dataset.node);
+  el.addEventListener("click", go);
+  el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+});
+
+/* ---------- 4: test traces ---------- */
+const SNAPSHOT_STEP = {
+  t: "Snapshot before the body runs", layer: "lifecycle", nodes: ["h1","h2","h3","h4","sw1","r1","r2"], links: [],
+  p: "The plugin starts a <code>TestRun</code>. It clears the test's old artifacts and asks the backend for a snapshot: each device's Snapshot capability saves its part. The ID goes into any failure report and the repro command.",
+  code: { local: "ip -j link show              # links, every node\nvtysh -c 'show running-config'   # r1, r2\nbridge -j vlan show         # sw1\nip -j route show            # every host\n→ .netcheck/snapshots/<id>.json",
+          nvidia: "GET /nvue_v1/revision      # record the applied revision per switch and router\n# planned: NvueSnapshot (ADR-0003 open question)" },
+  plannedNvidia: true,
+  where: "pytest_plugin._isolate → Lab.start_test → TestRun.begin → Backend.snapshot"
+};
+const RESTORE = (what) => ({
+  t: "Clean up, then restore", layer: "lifecycle", nodes: ["h1","h2","h3","h4","sw1","r1","r2"], links: [],
+  p: `The cleanup registry undoes the test's own changes, newest first (${what}). Then the snapshot is compared with the live lab and only the differences are put back, and verified. If the restore fails, the run stops with exit code 3.`,
+  code: { local: "run.end():\n  cleanup.run()           # LIFO undo\n  backend.restore(snap)   # diff, apply, verify",
+          nvidia: "run.end():\n  cleanup.run()           # each undo is an NVUE revision\n  backend.restore(snap)   # planned: re-apply the saved revision" },
+  where: "testrun.py · TestRun.end → TeardownOutcome"
+});
 
 const SCENARIOS = [
   { key: "iso", label: "VLAN isolation", id: "tests/lab/test_vlan.py::test_hosts_in_different_vlans_are_isolated[h1-h3]",
+    named: ["Look up where h1 and h3 are attached in the intent", "Force h1 and h3 to talk directly over layer 2", "Start a packet capture on h3", "Send 20 pings from h1 to h3", "Check h3 never answered (0/20 replies)"],
     steps: [
       { t: "The test case comes from the intent", layer: "intent", nodes: ["h1","h3"], links: [],
-        p: "No test lists hosts by hand. <code>tests/lab/conftest.py</code> reads <code>expect.isolated</code> and creates one case per pair, so <code>[h1, h3]</code> becomes the ID <code>[h1-h3]</code>.",
-        code: "expect:\n  isolated:\n    - [h1, h3]   # → test case [h1-h3]\n    - [h2, h3]   # → test case [h2-h3]",
-        where: "intent/lab.yaml · tests/lab/conftest.py → pytest_generate_tests" },
+        p: "No test lists hosts by hand. <code>expect.isolated</code> in the intent becomes one test case per pair: <code>[h1, h3]</code> is the case <code>[h1-h3]</code>.",
+        code: "expect:\n  isolated:\n    - [h1, h3]   # → [h1-h3]\n    - [h2, h3]   # → [h2-h3]",
+        where: "intent/lab.yaml → Expected.isolated_pairs → tests/lab/conftest.py" },
       SNAPSHOT_STEP,
-      { t: "The assertion reads the intent", layer: "assertion", nodes: ["h1","h3"], links: [],
-        p: "<code>assert_isolated(h1, h3)</code> looks up both addresses in the intent and the ping window in <code>timing.yaml</code>: 4 seconds, so 20 pings at 0.2 s.",
-        code: "ip_a, ip_b = 10.0.10.11, 10.0.20.13\nwindow = timing['isolation_window'].window   # 4 s",
-        where: "netcheck/assertions/l2.py · assert_isolated" },
-      { t: "Force the question onto layer 2", layer: "capability", nodes: ["h1","h3"], links: [],
-        p: "Without this step the test could pass for the wrong reason: h1 would send to its gateway r1, which has no route to VLAN 20. A direct route makes h1 ask for h3 with ARP, so a reply can only mean they share a broadcast domain. Each route is registered for cleanup the moment it is added.",
-        code: "# Shell.add_host_route on h1 and on h3\nip route replace 10.0.20.13/32 dev eth1 scope link\nip neigh flush dev eth1\ncleanup.register('remove on-link route …', undo)",
-        where: "Shell capability → LinuxShell" },
-      { t: "Start a packet capture on h3", layer: "capability", nodes: ["h3"], links: ["h3-sw1"],
-        p: "Evidence is collected before the verdict, not after. If any packet reaches h3, the report can show it.",
-        code: "tcpdump -i eth1 -nn -U -w /tmp/netcheck-xxxx.pcap 'icmp or arp' &",
+      { t: "Where are the two hosts attached?", layer: "intent", step: 1, nodes: ["h1","h3","sw1"], links: ["h1-sw1","h3-sw1"],
+        p: "<code>lab.expected.attachment()</code> returns each host's switch, port and VLAN: h1 on sw1:p1 in VLAN 10, h3 on sw1:p3 in VLAN 20.",
+        code: "Attachment(switch='sw1', port='p1', vlan=10)   # h1\nAttachment(switch='sw1', port='p3', vlan=20)   # h3",
+        where: "netcheck/expected.py · Expected.attachment" },
+      { t: "Force the question onto layer 2", layer: "capability", step: 2, nodes: ["h1","h3"], links: [],
+        p: "Without this the test could pass for the wrong reason: h1 would send to its gateway r1, which has no route to VLAN 20. On-link routes and empty ARP caches mean a reply can only come from the same broadcast domain. Each route is registered for cleanup the moment it is added.",
+        code: { local: "ip route replace 10.0.20.13/32 dev eth1 scope link   # h1\nip neigh flush dev eth1\ncleanup.register('remove on-link route ...', undo)",
+                nvidia: "ssh h1 'ip route replace 10.0.20.13/32 dev eth1 scope link'   # planned\ncleanup.register('remove on-link route ...', undo)" },
+        plannedNvidia: true,
+        where: "assertions/l2.py · force_layer2_path → Shell.add_host_route" },
+      { t: "Start a packet capture on h3", layer: "capability", step: 3, nodes: ["h3"], links: ["h3-sw1"],
+        p: "Evidence is started before the verdict. If any packet reaches h3, the report can show it.",
+        code: { local: "tcpdump -i eth1 -nn -U -w /tmp/netcheck-xxxx.pcap 'icmp or arp' &",
+                nvidia: "ssh h3 \"tcpdump -i eth1 -nn -U -w /tmp/netcheck-xxxx.pcap 'icmp or arp' &\"   # planned" },
+        plannedNvidia: true,
         where: "Shell.start_capture" },
-      { t: "Ping, through the transport", layer: "transport", nodes: ["h1","sw1","h3"], links: ["h1-sw1","h3-sw1"],
-        p: "The transport wraps the command in <code>docker exec</code>, records it in h1's device log, and the shell capability parses the text summary into a <code>PingResult</code>. It never stops early: the full window always runs.",
-        code: "docker exec -i clab-campus-mini-h1 sh -c \\\n  'ping -n -c 20 -i 0.2 -W 1 -w 4 10.0.20.13'\n\n20 packets transmitted, 0 received\n→ PingResult(sent=20, received=0)",
-        where: "DockerExecTransport.run → parse_ping" },
-      { t: "Verdict", layer: "assertion", nodes: ["sw1"], links: [],
-        outcome: true,
-        p: "<span class='pill pass'>pass</span> 0 replies: the hosts are isolated.<br><span class='pill fail'>fail</span> any reply: read sw1's live VLANs, compare them with <code>expected_state.json</code>, and raise a report naming the drifted port (with the wrong-VLAN fault: <code>sw1:p3</code> expected VLAN 20, actual VLAN 10).",
-        code: "live = sw1.bridge.vlan_membership()      # bridge -j vlan show\nexpected = lab.expected.vlan_membership('sw1')\n→ drift: sw1:p3  access VLAN 20 ≠ access VLAN 10",
-        where: "assertions/l2.py · vlan_drift → FailureReport" },
-      { t: "Clean up, then restore", layer: "fixture", nodes: ["h1","h3"], links: [],
-        p: "The cleanup registry runs newest first: stop the capture, remove h3's route, remove h1's route. Then the snapshot is compared with the live lab and only differences are put back. Here nothing differs, so the restore does nothing.",
-        code: "cleanup.run()          # LIFO undo\nbackend.restore(snap)  # diff, apply only what changed",
-        where: "pytest_plugin.py · _isolate (after yield)" },
+      { t: "Ping, through the transport", layer: "transport", step: 4, nodes: ["h1","sw1","h3"], links: ["h1-sw1","h3-sw1"],
+        p: "The full 4 s window always runs (20 pings at 0.2 s, from <code>timing.yaml</code>). The transport logs the call; the Shell capability parses the summary into a <code>PingResult</code>. A ping that didn't run at all raises, so it can't look like isolation.",
+        code: { local: "docker exec -i clab-campus-mini-h1 sh -c \\\n  'ping -n -c 20 -i 0.2 -W 1 -w 4 10.0.20.13'\n20 packets transmitted, 0 received\n→ PingResult(sent=20, received=0)",
+                nvidia: "ssh h1 'ping -n -c 20 -i 0.2 -W 1 -w 4 10.0.20.13'   # planned\n→ PingResult(sent=20, received=0)" },
+        plannedNvidia: true,
+        where: "Shell.ping → parse_ping" },
+      { t: "Verdict", layer: "assertion", step: 5, nodes: ["sw1"], links: [],
+        p: "<span class='pill pass'>pass</span> 0 replies: the hosts are isolated.<br><span class='pill fail'>fail</span> any reply: read sw1's live VLANs, compare with the intent, raise a report naming the drifted port. With the wrong-VLAN fault: <code>sw1:p3</code> expected VLAN 20, actual VLAN 10.",
+        code: { local: "live = sw1.bridge.vlan_membership()        # bridge -j vlan show\n→ drift: sw1:p3  access VLAN 20 ≠ access VLAN 10",
+                nvidia: "live = sw1.bridge.vlan_membership()        # GET interface + bridge/domain/br_default\n→ drift: sw1:p3  access VLAN 20 ≠ access VLAN 10" },
+        where: "assertions/l2.py · check_no_replies → vlan_drift → FailureReport" },
+      RESTORE("stop the capture, remove h3's route, remove h1's route"),
     ] },
   { key: "adj", label: "OSPF adjacency", id: "tests/lab/test_ospf.py::test_ospf_adjacency_is_full[r1-r2-backup]",
+    named: ["Look up the backup link r1:p3 -> r2 in the intent", "Check r1:p3 has the intended OSPF area and timers", "Wait until r1 sees r2 (2.2.2.2) as Full via p3"],
     steps: [
-      { t: "One case per link", layer: "intent", nodes: ["r1","r2"], links: ["primary","backup"],
-        p: "<code>Expected.adjacencies()</code> walks the routed links between routers. r1 and r2 share two links, so there are two adjacencies on each side and four test cases.",
-        code: "ospf_neighbors.r1:\n  - {neighbor: r2, local_port: p2, link: primary}\n  - {neighbor: r2, local_port: p3, link: backup}\n→ [r1-r2-primary] [r1-r2-backup] [r2-r1-primary] [r2-r1-backup]",
-        where: "netcheck/expected.py · Expected.adjacencies → tests/lab/conftest.py" },
+      { t: "One case per link, not per router pair", layer: "intent", step: 1, nodes: ["r1","r2"], links: ["primary","backup"],
+        p: "<code>Expected.adjacencies()</code> walks the routed links. r1 and r2 share two links, so there are four cases. A check per router pair would pass with the backup link down.",
+        code: "Adjacency(router='r1', neighbor='r2', router_id='2.2.2.2', local_port='p2', link='primary')\nAdjacency(router='r1', neighbor='r2', router_id='2.2.2.2', local_port='p3', link='backup')\n→ [r1-r2-primary] [r1-r2-backup] [r2-r1-primary] [r2-r1-backup]",
+        where: "netcheck/expected.py · Expected.adjacencies" },
       SNAPSHOT_STEP,
-      { t: "The assertion knows which link", layer: "assertion", nodes: ["r1"], links: ["backup"],
-        p: "<code>assert_ospf_neighbor_full(r1, r2, port='p3')</code> wants a neighbor with r2's router ID <b>and</b> local port p3. Matching on the router ID alone would pass while the backup link is down.",
-        code: "rid = '2.2.2.2'\nmatch: n.router_id == rid and n.port == 'p3'",
-        where: "netcheck/assertions/ospf.py · assert_ospf_neighbor_full" },
-      { t: "Ospf capability asks FRR", layer: "transport", nodes: ["r1"], links: [],
-        p: "The router answers in JSON. The parser keeps the state before the slash and maps the interface back to a logical port with the device's port map (eth3 → p3), so the test never sees eth names.",
-        code: "docker exec -i clab-campus-mini-r1 sh -c \\\n  \"vtysh -c 'show ip ospf neighbor json'\"\n\n{\"neighbors\": {\"2.2.2.2\": [\n  {\"nbrState\": \"Full/-\", \"ifaceName\": \"eth3:10.0.12.2\"}, …]}}\n→ OspfNeighbor('2.2.2.2', 'Full', 'p3')",
-        where: "FrrOspf.neighbors → parse_frr_neighbors" },
-      { t: "Poll, never sleep", layer: "assertion", nodes: ["r1"], links: ["backup"],
-        p: "<code>wait_until</code> asks again every second until the state is Full or 30 s pass. The wait time is recorded against the 10 s SLA and printed in the measurements summary.",
-        code: "# timing.yaml (local profile)\nospf_neighbor_full: {sla: 10, timeout: 30, poll: 1}",
+      { t: "Are the OSPF settings on the port right?", layer: "capability", step: 2, nodes: ["r1"], links: ["backup"],
+        p: "Before waiting for the neighbor, compare r1:p3's OSPF area, network type and timers with the intent. A hello-timer mismatch shows up here as a drift line, not as a timeout.",
+        code: { local: "vtysh -c 'show running-config'\n→ OspfInterface(name='p3', area='0', hello_interval=1, dead_interval=4,\n                network='point-to-point', cost=100)",
+                nvidia: "GET /nvue_v1/interface?rev=applied\n  swp3.router.ospf: {area: '0', timers: {hello-interval: 1, dead-interval: 4}, ...}\n→ OspfInterface(name='p3', area='0', hello_interval=1, ...)   # same value" },
+        where: "assertions/ospf.py · assert_ospf_interface_matches_intent → Ospf.interface_settings" },
+      { t: "Ask the router for its neighbors", layer: "transport", step: 3, nodes: ["r1"], links: [],
+        p: "The answer is JSON. The parser maps the interface back to a logical port (eth3 or swp3 → p3) and spells the state the same way on both backends, so the assertion never sees a backend detail.",
+        code: { local: "vtysh -c 'show ip ospf neighbor json'\n{\"neighbors\": {\"2.2.2.2\": [{\"nbrState\": \"Full/-\", \"ifaceName\": \"eth3:10.0.12.2\"}]}}\n→ OspfNeighbor('2.2.2.2', 'Full', 'p3')",
+                nvidia: "GET /nvue_v1/vrf/default/router/ospf/neighbor?rev=operational\n{\"2.2.2.2\": {\"interface\": {\"swp3\": {\"local-ip\": {\"10.0.12.2\": {\"state\": \"full\"}}}}}}\n→ OspfNeighbor('2.2.2.2', 'Full', 'p3')" },
+        where: "FrrOspf.neighbors / NvueOspf.neighbors → parse_frr_neighbors / parse_nvue_neighbors" },
+      { t: "Poll, never sleep", layer: "assertion", step: 3, nodes: ["r1"], links: ["backup"],
+        p: "Asked every second until Full or 30 s pass (45 s on Air). The wait is recorded against the 10 s SLA and printed in the measurements summary.",
+        code: "# timing.yaml\nlocal:  ospf_neighbor_full: {sla: 10, timeout: 30, poll: 1}\nnvidia: ospf_neighbor_full: {sla: 10, timeout: 45, poll: 2}",
         where: "netcheck/timing.py · Timing.wait_until" },
-      { t: "Verdict", layer: "assertion", nodes: ["r1","r2"], links: ["backup"], outcome: true,
-        p: "<span class='pill pass'>pass</span> neighbor Full on p3.<br><span class='pill fail'>fail</span> the report shows both routers' neighbors, says whether another link to r2 is still Full, and shows only the link that failed, with its admin and operational state.",
-        code: "diagnosis: r1 is Full with r2 via p2; only p3 is down\nr1:p3 link (backup): operstate DOWN, admin down",
+      { t: "Verdict", layer: "assertion", step: 3, nodes: ["r1","r2"], links: ["backup"],
+        p: "<span class='pill pass'>pass</span> neighbor Full on p3.<br><span class='pill fail'>fail</span> the report shows both routers' neighbors, says whether another link to r2 is still Full, and shows the failed link's admin and operational state.",
+        code: "diagnosis: r1 is Full with r2 via p2; only p3 is down\nr1:p3 link (backup): admin down, operstate DOWN",
         where: "assertions/ospf.py · failure branch (guarded evidence)" },
+      RESTORE("nothing to undo: the test only read"),
     ] },
-  { key: "route", label: "Route learned", id: "tests/lab/test_ospf.py::test_ospf_route_is_learned[r1-10.0.30.0/24]",
+  { key: "drift", label: "VLAN drift (soft steps)", id: "tests/lab/test_drift.py::test_vlan_membership_matches_intent[sw1]",
+    named: ["Read from the intent which VLANs each sw1 port must carry", "Read the live VLAN membership from sw1", "Check sw1:p1 is access VLAN 10   (soft)", "Check sw1:p2 is access VLAN 10   (soft)", "Check sw1:p3 is access VLAN 20   (soft)", "Check sw1:p4 is trunk VLAN 10,20 (soft)", "Check sw1 has no bridge ports the intent does not list (soft)"],
     steps: [
-      { t: "Which prefixes each router must learn", layer: "intent", nodes: ["r2","h4","r1"], links: ["r2-h4"],
-        p: "<code>Expected</code> collects what each router advertises: its routed links and any VLAN it is gateway for. r2 advertises 10.0.30.0/24 (its LAN to h4), so r1 must learn it.",
-        code: "routes:\n  r1: [10.0.30.0/24]   # from r2\n  r2: [10.0.10.0/24]   # VLAN 10, from r1",
-        where: "netcheck/expected.py · Expected.routes, Expected.originator" },
+      { t: "What every port must carry", layer: "intent", step: 1, nodes: ["sw1"], links: ["h1-sw1","h2-sw1","h3-sw1","sw1-r1"],
+        p: "The expected membership comes back in the same type the switch will return, so the comparison is exact: mode and VLAN list per port.",
+        code: "lab.expected.vlan_membership('sw1')\n{'p1': PortVlans('access', (10,)), 'p2': PortVlans('access', (10,)),\n 'p3': PortVlans('access', (20,)), 'p4': PortVlans('trunk', (10, 20))}",
+        where: "netcheck/expected.py · Expected.vlan_membership" },
       SNAPSHOT_STEP,
-      { t: "Read r1's routing table", layer: "transport", nodes: ["r1"], links: ["primary"],
-        p: "The Ospf capability asks for OSPF routes and keeps the active next hops. On a healthy lab the route goes via the primary link.",
-        code: "vtysh -c 'show ip route ospf json'\n→ Route('10.0.30.0/24', 'ospf', next_hops=('10.0.12.1',), installed=True)",
-        where: "FrrOspf.routes → parse_frr_routes" },
-      { t: "Poll until installed", layer: "assertion", nodes: ["r1"], links: [],
-        p: "Asked every 0.5 s for up to 15 s. Time to install is recorded against a 5 s SLA.",
-        code: "route_installed: {sla: 5, timeout: 15, poll: 0.5}",
-        where: "assertions/ospf.py · assert_route_present" },
-      { t: "Verdict, and why it is missing", layer: "assertion", nodes: ["r1","r2"], links: ["r2-h4"], outcome: true,
-        p: "<span class='pill pass'>pass</span> route installed.<br><span class='pill fail'>fail</span> the report separates two causes: adjacency broken, or adjacency fine but the prefix never advertised. If neighbors are Full and the prefix is not in OSPF's own table, it reads r2's config and shows the interface that left OSPF.",
-        code: "diagnosis: r1: adjacency Full, but r2 is not advertising 10.0.30.0/24\ndrift: r2:p3 (eth3)  expected 'OSPF area 0', actual 'not in OSPF'",
-        where: "assertions/ospf.py · _diagnose, interface_drift (via Ospf.interface_settings)" },
+      { t: "Read the live switch once", layer: "transport", step: 2, nodes: ["sw1"], links: [],
+        p: "One read of the whole bridge. A port the intent doesn't know is kept under its real name (eth9, swp9) so the last step can report it. The bridge device itself is skipped.",
+        code: { local: "bridge -j vlan show\n→ {'p1': PortVlans('access', (10,)), ..., 'p4': PortVlans('trunk', (10, 20))}",
+                nvidia: "GET /nvue_v1/interface?rev=operational\nGET /nvue_v1/bridge/domain/br_default?rev=operational\n→ the same dict: access 10 → PortVlans('access', (10,)); no list → every domain VLAN" },
+        where: "parse_bridge_vlans / parse_nvue_bridge" },
+      { t: "One soft step per port", layer: "assertion", step: 5, nodes: ["sw1","h3"], links: ["h3-sw1"],
+        p: "<code>continue_on_failure=True</code>: a failed port is recorded as <code>[FAILED, continued]</code> and the next port is still checked. One run lists every bad port instead of stopping at the first.",
+        code: "for port, spec in sorted(expected.items()):\n    with step(f\"Check sw1:{port} is {intended}\", continue_on_failure=True):\n        check_port_vlans('sw1', port, expected, live)",
+        where: "tests/lab/test_drift.py · netcheck/steps.py" },
+      { t: "Unplanned ports", layer: "assertion", step: 7, nodes: ["sw1"], links: [],
+        p: "The last soft step fails if the bridge has a port the intent doesn't list: someone plugged something in outside the design. Verified on the real lab with a dummy port.",
+        code: "7. Check sw1 has no bridge ports the intent does not list\n   [FAILED, continued] - actual: also dummy9\n   sw1:dummy9: expected 'absent', actual 'trunk VLAN 1,10'  (not in the intent)",
+        where: "assertions/l2.py · check_no_extra_ports" },
+      { t: "One report for everything that failed", layer: "lifecycle", step: 7, nodes: ["sw1"], links: [],
+        p: "When the body ends, the plugin fails the test once with a report that combines every soft failure: verdicts, drift lines, evidence. Any other error still stops the test immediately.",
+        code: "INTENT VIOLATED: 2 checks failed: sw1:p3 must be access VLAN 20;\n                 sw1:p4 must be trunk VLAN 10,20\nExpected: all 5 checks pass\nActual:   2 of 5 failed (steps 5, 6)",
+        where: "pytest_plugin.pytest_pyfunc_call → TestRun.soft_failure_report" },
+      RESTORE("nothing to undo"),
     ] },
   { key: "fail", label: "Failover", id: "tests/lab/test_failover.py::test_primary_link_failure_reroutes_via_backup",
+    named: ["Find the primary and backup links and a traffic path in the intent", "Check r1 reaches 10.0.30.0/24 via the primary (10.0.12.1)", "Send traffic h1 -> h4, take r1:p2 down, wait for the route via 10.0.12.3", "Check the outage (0.12s) is within the 2s SLA"],
     steps: [
-      { t: "Everything comes from the intent", layer: "intent", nodes: ["r1","r2","h1","h4"], links: ["primary","backup"],
-        p: "The test finds the links labelled primary and backup, the passive LAN behind r2 and a host on it. The expected next hop after the failure is r2's address on the backup link.",
-        code: "primary: r1:p2 (eth2) ↔ r2:p1\nbackup:  r1:p3 (eth3) ↔ r2:p2, next hop 10.0.12.3\ntraffic: h1 → h4 (10.0.30.14)",
-        where: "tests/lab/test_failover.py" },
+      { t: "The plan comes from the intent", layer: "intent", step: 1, nodes: ["r1","r2","h1","h4"], links: ["primary","backup"],
+        p: "<code>lab.expected.failover()</code> finds the links labelled primary and backup, the passive LAN behind r2 and a host on each side. The next hop after the failure is r2's address on the backup link.",
+        code: "FailoverPlan(router='r1', primary_port='p2', primary_hop='10.0.12.1',\n             backup_hop='10.0.12.3', prefix='10.0.30.0/24', src='h1', dst='h4')",
+        where: "netcheck/expected.py · Expected.failover" },
       SNAPSHOT_STEP,
-      { t: "Start a fast ping stream", layer: "capability", nodes: ["h1","sw1","r1","r2","h4"], links: ["h1-sw1","sw1-r1","primary","r2-h4"],
-        p: "h1 pings h4 every 10 ms in the background. Lost packets during the failure become the outage measurement.",
-        code: "ping -n -q -i 0.01 -w 15 10.0.30.14 > /tmp/netcheck-stream-xxxx.txt &",
-        where: "Shell.start_stream" },
-      { t: "Break the primary link", layer: "capability", nodes: ["r1"], links: ["primary"],
-        p: "The Links capability takes r1's eth2 down, and registers the undo straight away, so the link comes back even if the test fails.",
-        code: "ip link set eth2 down\ncleanup.register('bring r1:p2 back up', …)",
-        where: "Links.set_link" },
-      { t: "Wait for the backup path", layer: "assertion", nodes: ["r1"], links: ["backup"],
+      { t: "Start on the right path", layer: "assertion", step: 2, nodes: ["r1"], links: ["primary"],
+        p: "If traffic already used the backup, taking the primary down would measure nothing. The test checks the starting next hop first.",
+        code: "assert_route_uses(r1, '10.0.30.0/24', '10.0.12.1', why='before the failure, ')",
+        where: "assertions/ospf.py · assert_route_uses" },
+      { t: "Traffic on, link down", layer: "capability", step: 3, nodes: ["h1","sw1","r1","r2","h4"], links: ["h1-sw1","sw1-r1","primary","r2-h4"],
+        p: "h1 pings h4 every 10 ms in the background. Then the primary port goes down, with its undo registered straight away so the link comes back even if the test fails.",
+        code: { local: "ping -n -q -i 0.01 -w 15 10.0.30.14 > /tmp/netcheck-stream-xxxx.txt &   # h1\nip link set eth2 down                                                      # r1",
+                nvidia: "ssh h1 'ping -n -q -i 0.01 -w 15 10.0.30.14 ...' &   # planned\nPATCH /nvue_v1/interface/swp2/link?rev=<id>  {\"state\": {\"down\": {}}}\nPATCH /nvue_v1/revision/<id>  {\"state\": \"apply\"}   # then poll until applied" },
+        where: "Shell.start_stream · Links.set_link" },
+      { t: "Wait for the backup path", layer: "assertion", step: 3, nodes: ["r1"], links: ["backup"],
         p: "r1's routing table is polled every 0.2 s until 10.0.30.0/24 points at 10.0.12.3. That wait is the control-plane convergence time.",
         code: "reconverge_local_link: {sla: 2, timeout: 10, poll: 0.2, stream_interval: 0.01}",
         where: "netcheck/convergence.py · measure_reconvergence" },
-      { t: "Measure the outage", layer: "assertion", nodes: ["h1","r1","r2","h4"], links: ["h1-sw1","sw1-r1","backup","r2-h4"], outcome: true,
-        p: "After a second of recovery traffic the stream stops. Outage = lost packets × 10 ms, the loss-based method from RFC 6413. It is checked against the 2 s SLA and printed in the <b>netcheck measurements</b> summary.",
+      { t: "Measure the outage", layer: "assertion", step: 4, nodes: ["h1","r1","r2","h4"], links: ["h1-sw1","sw1-r1","backup","r2-h4"],
+        p: "After a second of recovery traffic the stream stops. Outage = lost packets × 10 ms, the loss-based method from RFC 6413. Checked against the 2 s SLA and printed in the <b>netcheck measurements</b> summary; on CI it is recorded, not enforced.",
         code: "stream: 1640 sent, 12 lost → outage 0.12 s (example)\nreconverge_local_link = 0.120s (SLA 2s)",
         where: "convergence.py · outage_seconds → timing.record" },
-      { t: "Clean up, then restore", layer: "fixture", nodes: ["r1"], links: ["primary"],
-        p: "Newest first: bring eth2 back up, stop the stream. The snapshot restore then checks every link is in its saved state.",
-        code: "cleanup.run()  # ip link set eth2 up; kill stream\nbackend.restore(snap)",
-        where: "pytest_plugin.py · _isolate (after yield)" },
+      RESTORE("bring r1:p2 back up, stop the stream"),
     ] },
 ];
 
-const $ = (s, el = document) => el.querySelector(s);
-const svg = $("#topo");
-let sc = 0, st = 0, selected = "r1";
-
-function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+let sc = 0, st = 0;
 
 function renderTabs() {
   const tabs = $("#tabs");
   tabs.innerHTML = "";
   SCENARIOS.forEach((s, i) => {
     const b = document.createElement("button");
-    b.className = "tab"; b.type = "button"; b.role = "tab"; b.id = "tab-" + s.key;
+    b.className = "tab"; b.type = "button"; b.setAttribute("role", "tab"); b.id = "tab-" + s.key;
     b.textContent = s.label; b.setAttribute("aria-selected", String(i === sc));
     b.addEventListener("click", () => { sc = i; st = 0; render(); });
     tabs.appendChild(b);
@@ -478,13 +891,15 @@ function highlight(step) {
 function render() {
   renderTabs();
   const s = SCENARIOS[sc], step = s.steps[st];
+  const code = typeof step.code === "string" ? step.code : step.code[backend];
   $("#testid").textContent = s.id;
   $("#stitle").textContent = step.t;
   $("#slayer").textContent = step.layer;
-  $("#scount").textContent = `step ${st + 1} of ${s.steps.length}`;
-  $("#sbody").innerHTML =
-    `<p class="${step.outcome ? "outcome" : ""}">${step.p}</p>` +
-    `<pre>${esc(step.code)}</pre>` +
+  $("#scount").textContent = `${st + 1} of ${s.steps.length}`;
+  const named = step.step ? `<div class="named"><em>step ${step.step}:</em> ${esc(s.named[step.step - 1])}</div>` : "";
+  const planned = backend === "nvidia" && step.plannedNvidia
+    ? `<p class="planned-note">On the NVIDIA backend this part is planned, not built yet.</p>` : "";
+  $("#sbody").innerHTML = named + `<p>${step.p}</p><pre>${esc(code)}</pre>` + planned +
     `<div class="where">Code: <span class="mono">${esc(step.where)}</span></div>`;
   $("#prev").disabled = st === 0;
   $("#next").textContent = st === s.steps.length - 1 ? "Start over" : "Next step";
@@ -497,31 +912,10 @@ function render() {
     d.addEventListener("click", () => { st = i; render(); });
     dots.appendChild(d);
   });
+  $("#steplist").textContent = s.id + "\n" +
+    s.named.map((t, i) => `  step ${i + 1}: ${t}`).join("\n") + "\nPASSED";
   highlight(step);
 }
-
-function renderDetail(name) {
-  selected = name;
-  const n = NODES[name];
-  svg.querySelectorAll(".node").forEach(el => el.classList.toggle("sel", el.dataset.node === name));
-  const rows = n.ports.map(([lp, real, what]) => `<tr><td>${lp}</td><td>${real}</td><td>${esc(what)}</td></tr>`).join("");
-  $("#detail").innerHTML = `
-    <h2>${name} <span class="note">· ${n.role} · container <span class="mono">clab-campus-mini-${name}</span></span></h2>
-    <dl class="kv">
-      <dt>Address</dt><dd>${esc(n.ip)}</dd>
-      <dt>Notes</dt><dd>${esc(n.extra)}</dd>
-      <dt>Capabilities</dt><dd><div class="caps">${n.caps.map(c => `<span class="cap">${c}</span>`).join("")}</div></dd>
-      <dt>Used by tests</dt><dd>${esc(n.tests)}</dd>
-    </dl>
-    <div class="tbl-scroll"><table class="ports"><thead><tr><th>Logical</th><th>Local</th><th>Connects to</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div><div class="eyebrow" style="margin-bottom:6px">Try it in the VM</div><pre>${esc(n.try)}</pre></div>`;
-}
-
-svg.querySelectorAll(".node").forEach(el => {
-  const go = () => { renderDetail(el.dataset.node); $("#detail-panel").scrollIntoView({ behavior: "smooth", block: "nearest" }); };
-  el.addEventListener("click", go);
-  el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
-});
 
 $("#next").addEventListener("click", () => {
   const n = SCENARIOS[sc].steps.length;
@@ -529,20 +923,21 @@ $("#next").addEventListener("click", () => {
 });
 $("#prev").addEventListener("click", () => { if (st > 0) { st--; render(); } });
 
-document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
-  const text = $("#" + b.dataset.copy).textContent;
-  const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done).catch(() => selectText(b.dataset.copy));
-  } else selectText(b.dataset.copy);
-}));
+/* ---------- copy ---------- */
 function selectText(id) {
   const r = document.createRange(); r.selectNodeContents($("#" + id));
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
+document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
+  const id = b.dataset.copy, text = $("#" + id).textContent;
+  const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => selectText(id));
+  } else selectText(id);
+}));
 
-render();
-renderDetail(selected);
+showBlock("caps");
+setBackend("local");
 </script>
 </body>
 </html>
