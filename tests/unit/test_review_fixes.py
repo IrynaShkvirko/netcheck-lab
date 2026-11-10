@@ -380,8 +380,10 @@ def lab(tmp_path_factory):
     the_lab, parts = build_fake_lab(load_intent({intent!r}),
                                     Path(str(tmp_path_factory.mktemp("art"))))
     make_healthy(the_lab, parts)
-    for port, vlan in {bad_ports!r}.items():  # injected wrong-VLAN faults
-        parts["bridge"].ports[port] = PortVlans("access", (vlan,))
+    for where, vlan in {bad_ports!r}.items():  # injected wrong-VLAN faults: "p3" or "sw2:p1"
+        switch, _, port = where.rpartition(":")
+        bridge = parts["bridge_" + switch] if switch else parts["bridge"]
+        bridge.ports[port] = PortVlans("access", (vlan,))
     token = set_current(the_lab)
     yield the_lab
     token.var.reset(token)
@@ -389,22 +391,29 @@ def lab(tmp_path_factory):
 
 
 def _run_lab_suite(  # type: ignore[no-untyped-def]
-    pytester, wrong_vlan: bool = False, *args: str, bad_ports: dict[str, int] | None = None
+    pytester,
+    wrong_vlan: bool = False,
+    *args: str,
+    bad_ports: dict[str, int] | None = None,
+    intent: str = "intent/lab.yaml",
 ):
+    """Run the real tests/lab files on a healthy fake lab built from `intent` (a path
+    relative to the repo)."""
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[2]
     lab_dir = repo / "tests" / "lab"
+    intent_path = str(repo / intent)
     if bad_ports is None:
         bad_ports = {"p3": 10} if wrong_vlan else {}
     conftest = (lab_dir / "conftest.py").read_text() + _LAB_CONFTEST.format(
-        repo=str(repo), intent=str(repo / "intent/lab.yaml"), bad_ports=bad_ports
+        repo=str(repo), intent=intent_path, bad_ports=bad_ports
     )
     pytester.makeconftest(conftest)
     for f in lab_dir.glob("test_*.py"):
         pytester.makepyfile(**{f.stem: f.read_text()})
     return pytester.runpytest_inprocess(
-        "-p", "netcheck.pytest_plugin", "--intent", str(repo / "intent/lab.yaml"), *args
+        "-p", "netcheck.pytest_plugin", "--intent", intent_path, *args
     )
 
 
@@ -412,6 +421,58 @@ def test_lab_suite_passes_on_a_healthy_fake_lab(pytester) -> None:  # type: igno
     """The real tests/lab files, step by step, against a working (fake) lab."""
     result = _run_lab_suite(pytester)
     result.assert_outcomes(passed=16)
+
+
+# Lab tests that fail on a healthy two-site lab because they assume campus-mini's shape.
+# Each one is a bug in a lab test, not in the network: when it is fixed, remove it here.
+# test_ospf_route_is_learned wants the next hop on a link to the router that originates
+# the prefix, but OSPF takes the cheapest path: r1 reaches r3's VLAN 30 via r2 (cost 20)
+# rather than over the direct backup link (cost 50); 10.0.12.0/31 has two originators and
+# the test picks r1 although r3's shortest path is via r2.
+TWO_SITE = "tests/unit/intents/two-site.yaml"
+TWO_SITE_ASSUMES_CAMPUS_MINI = {
+    "test_ospf_route_is_learned[r1-10.0.30.0/24]",
+    "test_ospf_route_is_learned[r3-10.0.10.0/24]",
+    "test_ospf_route_is_learned[r3-10.0.12.0/31]",
+}
+
+
+def _failed_tests(result) -> set[str]:  # type: ignore[no-untyped-def]
+    reports = result.reprec.getreports("pytest_runtest_logreport")
+    return {r.nodeid.split("::")[-1] for r in reports if r.failed}
+
+
+def test_lab_suite_on_a_second_shape_fails_only_where_tests_assume_campus_mini(
+    pytester,
+) -> None:  # type: ignore[no-untyped-def]
+    """The real tests/lab files on a healthy fake lab built from the two-site intent
+    (three routers, two switches, VLAN 10 on both). Every failure is a lab test that
+    assumes campus-mini's shape; the set must shrink, never grow."""
+    result = _run_lab_suite(pytester, intent=TWO_SITE)
+    failed = _failed_tests(result)
+    assert failed == TWO_SITE_ASSUMES_CAMPUS_MINI, (
+        f"newly failing: {sorted(failed - TWO_SITE_ASSUMES_CAMPUS_MINI)}; "
+        f"now passing (remove from the list): {sorted(TWO_SITE_ASSUMES_CAMPUS_MINI - failed)}"
+    )
+    known = len(TWO_SITE_ASSUMES_CAMPUS_MINI)
+    result.assert_outcomes(passed=27 - known, failed=known)
+
+
+def test_wrong_vlan_on_the_second_switch_breaks_isolation_across_the_trunk(
+    pytester,
+) -> None:  # type: ignore[no-untyped-def]
+    """h3 (sw2) moved into VLAN 20 shares a broadcast domain with h2 (sw1) through the
+    inter-switch trunk: the h3-h2 isolation test fails and names the drift on sw2."""
+    result = _run_lab_suite(
+        pytester, False, "-k", "isolated", intent=TWO_SITE, bad_ports={"sw2:p1": 20}
+    )
+    assert _failed_tests(result) == {"test_hosts_in_different_vlans_are_isolated[h3-h2]"}
+    result.stdout.fnmatch_lines(
+        [
+            "*INTENT VIOLATED: h3 (VLAN 10) and h2 (VLAN 20) must be isolated*",
+            "*sw2:p1: expected 'access VLAN 10', actual 'access VLAN 20'*",
+        ]
+    )
 
 
 def test_failure_report_names_the_failed_step(pytester) -> None:  # type: ignore[no-untyped-def]

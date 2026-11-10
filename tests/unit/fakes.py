@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import heapq
+import ipaddress
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -24,7 +26,7 @@ from netcheck.capabilities import (
 )
 from netcheck.device import Device
 from netcheck.expected import Expected
-from netcheck.intent import Intent
+from netcheck.intent import Intent, Link
 from netcheck.lab import Lab
 from netcheck.timing import Threshold, Timing
 
@@ -36,15 +38,19 @@ class FakeOspf(Ospf):
         self.lsdb: set[str] = set()
         self.interfaces: dict[str, OspfInterface] = {}  # what the router reports
         self.area_overrides: dict[str, int | None] = {}
+        # set by make_healthy: neighbors, routes and LSDB then come from the computed
+        # OSPF domain and follow link changes, instead of from nbrs / rib / lsdb
+        self.network: FakeOspfNetwork | None = None
+        self.name = ""
 
     def neighbors(self) -> list[OspfNeighbor]:
-        return self.nbrs
+        return self.network.neighbors(self.name) if self.network else self.nbrs
 
     def routes(self) -> dict[str, Route]:
-        return self.rib
+        return self.network.routes(self.name) if self.network else self.rib
 
     def lsdb_prefixes(self) -> set[str]:
-        return self.lsdb
+        return set(self.network.routes(self.name)) if self.network else self.lsdb
 
     def interface_settings(self) -> dict[str, OspfInterface]:
         """`interfaces`, with any set_interface_area overrides applied."""
@@ -82,7 +88,8 @@ class FakeLinks(Links):
 
 
 class FakeShell(Shell):
-    """Ping succeeds when the two hosts share a VLAN on the fake switch."""
+    """Ping succeeds when FakeWorld says the two hosts reach each other. An on-link route
+    to the destination (the isolation test adds one) means layer 2 only."""
 
     def __init__(self, name: str, world: FakeWorld) -> None:
         self.name = name
@@ -98,8 +105,9 @@ class FakeShell(Shell):
         deadline: float = 4.0,
         src_port: str = "p1",
     ) -> PingResult:
-        same = self.world.same_vlan(self.name, dst)
-        return PingResult(self.name, dst, count, count if same else 0)
+        on_link = f"{dst}/32" in self.routes
+        reached = self.world.reaches(self.name, dst, on_link=on_link)
+        return PingResult(self.name, dst, count, count if reached else 0)
 
     def add_host_route(self, prefix: str, port: str = "p1") -> None:
         self.routes.append(prefix)
@@ -170,21 +178,157 @@ def port_name(handle: CaptureHandle) -> str:
 
 
 class FakeWorld:
-    def __init__(self, intent: Intent, bridge: FakeBridge) -> None:
-        self.intent = intent
-        self.bridge = bridge
+    """Hosts, switches and VLANs, for the fake ping.
 
-    def same_vlan(self, src: str, dst_ip: str) -> bool:
-        dst = next(
-            n for n in self.intent.nodes.values() if n.ip and n.ip.split("/")[0] == dst_ip
-        ).name
-        expected = Expected(self.intent)
-        at_a, at_b = expected.attachment(src), expected.attachment(dst)
+    Two hosts share a broadcast domain when the access VLAN of one is on the other's port
+    and every trunk between their switches carries it, read from the fake bridges' current
+    state (so an injected wrong-VLAN fault joins them). Without an on-link route, a ping
+    also gets replies when both hosts have a default gateway: the fake routers route
+    between every LAN.
+    """
+
+    def __init__(self, intent: Intent) -> None:
+        self.intent = intent
+        self.expected = Expected(intent)
+        self.bridges: dict[str, FakeBridge] = {}  # by switch, filled by FakeFactory
+
+    def host_at(self, ip: str) -> str:
+        return next(n.name for n in self.intent.nodes.values() if n.ip and n.ip.split("/")[0] == ip)
+
+    def _vlans(self, switch: str, port: str) -> set[int]:
+        pv = self.bridges[switch].ports.get(port)
+        return set(pv.vlans) if pv else set()
+
+    def _domain(self, switch: str, vid: int) -> set[str]:
+        """Switches joined to `switch` by trunks that carry `vid` on both ends."""
+        seen, todo = {switch}, [switch]
+        while todo:
+            here = todo.pop()
+            for lk in self.intent.links_of(here):
+                far = lk.peer(here)
+                if (
+                    far.node in self.bridges
+                    and far.node not in seen
+                    and vid in self._vlans(here, lk.endpoint(here).port)
+                    and vid in self._vlans(far.node, far.port)
+                ):
+                    seen.add(far.node)
+                    todo.append(far.node)
+        return seen
+
+    def same_l2(self, a: str, b: str) -> bool:
+        at_a, at_b = self.expected.attachment(a), self.expected.attachment(b)
         if at_a is None or at_b is None:
-            return True  # one end is behind a router: the fake world routes it
-        va = set(self.bridge.ports[at_a.port].vlans)
-        vb = set(self.bridge.ports[at_b.port].vlans)
-        return bool(va & vb)
+            return False
+        return any(
+            vid in self._vlans(at_b.switch, at_b.port)
+            and at_b.switch in self._domain(at_a.switch, vid)
+            for vid in self._vlans(at_a.switch, at_a.port)
+        )
+
+    def reaches(self, src: str, dst_ip: str, *, on_link: bool) -> bool:
+        dst = self.host_at(dst_ip)
+        if self.same_l2(src, dst):
+            return True
+        nodes = self.intent.nodes
+        return not on_link and bool(nodes[src].gateway and nodes[dst].gateway)
+
+
+DEFAULT_OSPF_COST = 10  # a link the intent gives no ospf_cost (FRR would derive one)
+
+
+class FakeOspfNetwork:
+    """A working OSPF domain computed from the intent, for make_healthy.
+
+    An adjacency is Full on every routed router-to-router link whose ports are up on both
+    ends. Each router advertises the networks of its intended OSPF interfaces that are up.
+    Routes are a shortest-path calculation over the intent's OSPF costs, keeping every
+    equal-cost first hop, redone on each read, so taking a link down reroutes. It does not
+    use Expected's route or next-hop queries, so it can disagree with them.
+    """
+
+    def __init__(self, lab: Lab) -> None:
+        self.intent = lab.intent
+        self.routers = lab.expected.routers()
+        self.links = {r: lab[r].links for r in self.routers}
+        self.interfaces = {r: lab.expected.ospf_interfaces(r) for r in self.routers}
+
+    def _up(self, router: str, port: str) -> bool:
+        return self.links[router].link_state(port.partition(".")[0]).admin_up
+
+    def _link_up(self, lk: Link) -> bool:
+        return all(ep.node not in self.links or self._up(ep.node, ep.port) for ep in (lk.a, lk.b))
+
+    def _core(self, router: str) -> list[Link]:
+        """Routed links from `router` to another router, up on both ends."""
+        return [
+            lk
+            for lk in self.intent.links_of(router)
+            if lk.routed and lk.peer(router).node in self.links and self._link_up(lk)
+        ]
+
+    def neighbors(self, router: str) -> list[OspfNeighbor]:
+        return [
+            OspfNeighbor(
+                self.intent.nodes[lk.peer(router).node].router_id or "",
+                "Full",
+                lk.endpoint(router).port,
+            )
+            for lk in self._core(router)
+        ]
+
+    def _advertised(self, router: str) -> dict[str, int]:
+        """{prefix: interface cost} for the router's OSPF interfaces that are up."""
+        out: dict[str, int] = {}
+        for name, iface in self.interfaces[router].items():
+            port = name.partition(".")[0]
+            lk = self.intent.link_at(router, port)
+            if not self._link_up(lk):
+                continue
+            for address in iface.addresses:
+                net = str(ipaddress.ip_interface(address).network)
+                out[net] = lk.ospf_cost or DEFAULT_OSPF_COST
+        return out
+
+    def _spf(self, root: str) -> tuple[dict[str, int], dict[str, set[str]]]:
+        """Distance to every reachable router, and the first-hop addresses of all
+        shortest paths to it (Dijkstra with equal-cost paths merged)."""
+        dist, first = {root: 0}, {root: set[str]()}
+        queue, done = [(0, root)], set()
+        while queue:
+            d, here = heapq.heappop(queue)
+            if here in done:
+                continue
+            done.add(here)
+            for lk in self._core(here):
+                far = lk.peer(here)
+                cost = d + (lk.ospf_cost or DEFAULT_OSPF_COST)
+                hops = {(far.ip or "").split("/")[0]} if here == root else first[here]
+                if far.node not in dist or cost < dist[far.node]:
+                    dist[far.node], first[far.node] = cost, set(hops)
+                    heapq.heappush(queue, (cost, far.node))
+                elif cost == dist[far.node]:
+                    first[far.node] |= hops
+        return dist, first
+
+    def routes(self, router: str) -> dict[str, Route]:
+        dist, first = self._spf(router)
+        mine = self._advertised(router)
+        best: dict[str, tuple[int, set[str]]] = {}
+        for origin in self.routers:
+            if origin == router or origin not in dist:
+                continue
+            for prefix, iface_cost in self._advertised(origin).items():
+                if prefix in mine:
+                    continue
+                cost = dist[origin] + iface_cost
+                if prefix not in best or cost < best[prefix][0]:
+                    best[prefix] = (cost, set(first[origin]))
+                elif cost == best[prefix][0]:
+                    best[prefix][1].update(first[origin])
+        return {
+            p: Route(p, "ospf", tuple(sorted(hops)), True) for p, (_, hops) in sorted(best.items())
+        }
 
 
 class FakeBackend(Backend):
@@ -230,8 +374,8 @@ def fast_timing() -> Timing:
 
 
 class FakeFactory(CapabilityFactory):
-    """The fakes, handed out through the real assembly. Routers get a FakeOspf, the
-    switch the shared FakeBridge, hosts a FakeShell; each one is kept in `parts`."""
+    """The fakes, handed out through the real assembly. Routers get a FakeOspf, each
+    switch a FakeBridge, hosts a FakeShell; each one is kept in `parts`."""
 
     def __init__(self, world: FakeWorld, parts: dict[str, Any]) -> None:
         self.world, self.parts = world, parts
@@ -245,7 +389,13 @@ class FakeFactory(CapabilityFactory):
         return o
 
     def bridge(self, spec: DeviceSpec) -> Bridge:
-        return self.world.bridge
+        """One bridge per switch, starting with its intended VLANs. parts["bridge"] is the
+        first switch's, for tests written against campus-mini's single sw1."""
+        b = FakeBridge(self.world.expected.vlan_membership(spec.name))
+        self.world.bridges[spec.name] = b
+        self.parts[f"bridge_{spec.name}"] = b
+        self.parts.setdefault("bridge", b)
+        return b
 
     def shell(self, spec: DeviceSpec) -> Shell | None:
         return FakeShell(spec.name, self.world) if spec.role == "host" else None
@@ -262,9 +412,8 @@ class FakeFactory(CapabilityFactory):
 
 def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
     expected = Expected(intent)
-    bridge = FakeBridge(expected.vlan_membership("sw1"))
-    world = FakeWorld(intent, bridge)
-    parts: dict[str, Any] = {"bridge": bridge}
+    world = FakeWorld(intent)
+    parts: dict[str, Any] = {}
     devices = assemble(intent, "fake", "eth", FakeFactory(world, parts))
     lab = Lab(
         intent=intent,
@@ -281,21 +430,12 @@ def build_fake_lab(intent: Intent, tmp: Path) -> tuple[Lab, dict[str, Any]]:
 
 
 def make_healthy(lab: Lab, parts: dict[str, Any]) -> None:
-    """Fill the fakes with the state of a working campus-mini lab. r1's route to h4's LAN
-    follows r1's primary link: via 10.0.12.1 while p2 is up, via 10.0.12.3 when it is down."""
-    r1, r2 = parts["ospf_r1"], parts["ospf_r2"]
-    r1.interfaces = lab.expected.ospf_interfaces("r1")
-    r2.interfaces = lab.expected.ospf_interfaces("r2")
-    r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2"), OspfNeighbor("2.2.2.2", "Full", "p3")]
-    r2.nbrs = [OspfNeighbor("1.1.1.1", "Full", "p1"), OspfNeighbor("1.1.1.1", "Full", "p2")]
-    r1_links = lab["r1"].links
-
-    def r1_routes() -> dict[str, Route]:
-        primary_up = r1_links.link_state("p2").admin_up
-        hop = "10.0.12.1" if primary_up else "10.0.12.3"
-        return {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", (hop,), True)}
-
-    r1.routes = r1_routes  # type: ignore[method-assign]
-    r2.rib = {"10.0.10.0/24": Route("10.0.10.0/24", "ospf", ("10.0.12.0",), True)}
-    r1.lsdb = {"10.0.30.0/24"}
-    r2.lsdb = {"10.0.10.0/24"}
+    """Fill the fakes with the state of a working lab built from `lab.intent`: every router
+    reports its intended OSPF interfaces, and its adjacencies, routes and LSDB come from a
+    FakeOspfNetwork, so they follow link changes. On campus-mini, r1 routes h4's LAN via
+    10.0.12.1 while p2 is up and via 10.0.12.3 when it is down."""
+    network = FakeOspfNetwork(lab)
+    for router in lab.expected.routers():
+        ospf = parts[f"ospf_{router}"]
+        ospf.interfaces = lab.expected.ospf_interfaces(router)
+        ospf.network, ospf.name = network, router

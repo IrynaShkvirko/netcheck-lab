@@ -391,7 +391,10 @@ would pass every drift test. Two unit test files break that loop, for every inte
   with the intent.
 
 `tests/unit/intents/two-site.yaml` is a second shape (three routers, two switches, a VLAN
-spanning both, other timers) that is rendered and checked but never deployed.
+spanning both, other timers) that is rendered and checked but never deployed. The real
+`tests/lab` files also run on a healthy fake lab built from it; the lab tests that still
+assume campus-mini's shape are listed in `TWO_SITE_ASSUMES_CAMPUS_MINI`
+(`tests/unit/test_review_fixes.py`), a list that may only shrink.
 
 After an intended change to rendering, an intent or an image:
 
