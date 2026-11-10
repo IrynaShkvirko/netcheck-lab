@@ -247,11 +247,11 @@ class FakeOspfNetwork:
     use Expected's route or next-hop queries, so it can disagree with them.
     """
 
-    def __init__(self, lab: Lab) -> None:
+    def __init__(self, lab: Lab, ospf: dict[str, FakeOspf]) -> None:
         self.intent = lab.intent
         self.routers = lab.expected.routers()
         self.links = {r: lab[r].links for r in self.routers}
-        self.interfaces = {r: lab.expected.ospf_interfaces(r) for r in self.routers}
+        self.ospf = ospf  # live settings: an interface taken out of OSPF stops advertising
 
     def _up(self, router: str, port: str) -> bool:
         return self.links[router].link_state(port.partition(".")[0]).admin_up
@@ -278,9 +278,12 @@ class FakeOspfNetwork:
         ]
 
     def _advertised(self, router: str) -> dict[str, int]:
-        """{prefix: interface cost} for the router's OSPF interfaces that are up."""
+        """{prefix: interface cost} for the router's OSPF interfaces that are up and in
+        an area."""
         out: dict[str, int] = {}
-        for name, iface in self.interfaces[router].items():
+        for name, iface in self.ospf[router].interface_settings().items():
+            if iface.area is None:
+                continue
             port = name.partition(".")[0]
             lk = self.intent.link_at(router, port)
             if not self._link_up(lk):
@@ -434,7 +437,7 @@ def make_healthy(lab: Lab, parts: dict[str, Any]) -> None:
     reports its intended OSPF interfaces, and its adjacencies, routes and LSDB come from a
     FakeOspfNetwork, so they follow link changes. On campus-mini, r1 routes h4's LAN via
     10.0.12.1 while p2 is up and via 10.0.12.3 when it is down."""
-    network = FakeOspfNetwork(lab)
+    network = FakeOspfNetwork(lab, {r: parts[f"ospf_{r}"] for r in lab.expected.routers()})
     for router in lab.expected.routers():
         ospf = parts[f"ospf_{router}"]
         ospf.interfaces = lab.expected.ospf_interfaces(router)

@@ -124,7 +124,7 @@ class Backend(ABC):
         was changed. `reset()` to the baseline removes it again."""
         from netcheck.faults import FAULTS  # faults drive a Backend: import late
 
-        description = FAULTS[name](self)
+        description = FAULTS[name].apply(self)
         self.state.add_fault(name, description)
         return description
 

@@ -115,6 +115,7 @@ Lab commands:
 | `make lab-down` | destroy the lab |
 | `make fault-wrong-vlan` | demo fault: move h3's switch port into VLAN 10 |
 | `make fault-missing-ospf` | demo fault: remove r2's LAN from OSPF |
+| `make fault-check` | inject each fault in turn and prove the tests it declares catch it, then reset (also run in CI) |
 
 ### 4. Run the tests
 
@@ -181,7 +182,8 @@ make demo
 
 1. Smoke tests pass.
 2. `make fault-wrong-vlan` moves h3's switch port into VLAN 10.
-3. The isolation test fails. This is intended; make prints `Error 1 (ignored)` and continues.
+3. The isolation test fails. This is intended and make continues; if the test passed
+   instead, the demo stops with an error, because the suite would have missed the fault.
    The report, from a real run:
 
 ```
@@ -227,6 +229,25 @@ Full but the route disappears, and the report says so: "r1: adjacency Full, but 
 advertising 10.0.30.0/24", with the interface drift (`r2:p3 (eth3): expected OSPF area 0,
 actual not in OSPF`).
 Run it with `make fault-missing-ospf && uv run pytest tests/lab -m functional`, then `make lab-reset`.
+
+## Fault check
+
+A suite that never fails proves nothing: a test that always passes looks the same as a
+healthy network. Every fault in `netcheck/faults.py` therefore declares the lab tests that
+must catch it, and the text each failure report must show (for `wrong-vlan`: the isolation
+test for the pair, naming the drifted port, and the VLAN drift test).
+
+```bash
+make lab-up
+make fault-check            # or: uv run python -m netcheck fault-check wrong-vlan
+```
+
+For each fault it restores the baseline, injects the fault, runs the lab suite, checks every
+declared test failed with its text, restores the baseline again and reruns those tests,
+which must pass. It prints a summary and exits 1 if any fault went unnoticed. Reports go to
+`artifacts/fault-check/<fault>/`. CI runs it after the lab suite. The unit tests hold the
+declarations to the fake lab for every intent (`tests/unit/test_faultcheck.py`), so a new
+fault without a detecting test fails `make check`.
 
 ## Troubleshooting
 
