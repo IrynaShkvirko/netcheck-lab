@@ -24,6 +24,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from netcheck import provenance
 from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
 from netcheck.backends.base import Backend
 from netcheck.capabilities import (
@@ -334,10 +335,12 @@ class NvueLinks(_NvueBase, Links):
         return out
 
 
-def record_samples(t: ApiTransport, dest: Path) -> list[Path]:
+def record_samples(t: ApiTransport, dest: Path, provenance_root: Path | None = None) -> list[Path]:
     """Save the responses the parsers read, from a real switch, as test fixtures:
-    <dest>/<name>.<rev>.json. Run once against a DSX Air simulation, then point the unit
-    tests at the captured files instead of the documentation-based samples."""
+    <dest>/<name>.<rev>.json. Run against a DSX Air simulation, with `provenance_root` the
+    fixture folder (tests/unit/fixtures/nvue): the files are then recorded as captured in
+    its provenance.yaml, with the switch's NOS version, which is what makes the NVIDIA
+    parsers count as verified."""
     dest.mkdir(parents=True, exist_ok=True)
     written = []
     for name, path in PATHS.items():
@@ -347,6 +350,12 @@ def record_samples(t: ApiTransport, dest: Path) -> list[Path]:
                 f = dest / f"{name}.{rev}.json"
                 f.write_text(json.dumps(res.body, indent=2, sort_keys=True) + "\n")
                 written.append(f)
+    if provenance_root is not None and written:
+        system = t.request("GET", PATHS["system"], params={"rev": "operational"}).body
+        build = system.get("build") or system.get("version") if isinstance(system, dict) else None
+        provenance.mark_captured(
+            provenance_root, written, f"Cumulus Linux {build or '(version unknown)'}"
+        )
     return written
 
 

@@ -26,6 +26,9 @@ the changed files fall under (`docs/decisions/0001`–`0006` and later).
 - a transport call without a timeout or without a device-log record
 - a fixed `sleep` used as a wait
 - tests or assertions changed to make a backend pass
+- a new or changed parser whose only test data is samples marked `documentation` in
+  `provenance.yaml`, described as done or verified anywhere (README status, PR, docstring)
+- a sample file added under `tests/unit/fixtures/` without its `provenance.yaml` entry
 
 ## Workflow
 

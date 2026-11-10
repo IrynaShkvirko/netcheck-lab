@@ -12,16 +12,22 @@ Linux: one folder per device, one file per `GET <path>?rev=<rev>`, named
 | `routes.operational` | `vrf/default/router/rib/ipv4/route` | route / protocol / entry-index / via command tree (before Cumulus 5.11) |
 | `bridge_domain.operational` | `bridge/domain/br_default` | `nv show bridge domain <id>` and its `vlan` children |
 
-**These are assembled from the documentation, not captured from a switch.** The values
-come from `intent/lab.yaml`, so the parsers must produce exactly the state the local
-backend sees on a healthy lab (`tests/unit/test_nvue.py` checks that).
+**These are assembled from the documentation, not captured from a switch**, and
+`provenance.yaml` says so for each file. While any of them is `documentation`, every unit
+run prints how many are captured, the tests in `test_nvue.py` carry the
+`documentation_samples` marker, lab runs on `--backend nvidia` say the backend is
+unverified, and the README status reads unverified. The values come from
+`intent/lab.yaml`, so the parsers must produce exactly the state the local backend sees on
+a healthy lab (`tests/unit/test_nvue.py` checks that).
 
-When a DSX Air simulation is available, replace them with real responses:
+When a DSX Air simulation is available, replace them with real responses; the files are
+then recorded as captured, with the switch's version:
 
 ```python
 from netcheck.backends.nvidia_air import record_samples
 
-record_samples(device.ospf.t, Path("tests/unit/fixtures/nvue/r1"))
+root = Path("tests/unit/fixtures/nvue")
+record_samples(device.ospf.t, root / "r1", provenance_root=root)
 ```
 
 Any difference the tests then show is a parser bug or a documentation gap, found without
