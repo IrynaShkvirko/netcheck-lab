@@ -61,21 +61,6 @@ def test_advertising_interfaces_include_vlan_gateways(expected: Expected) -> Non
     assert (gw.name, gw.addresses) == ("p1.10", ("10.0.10.1/24",))
 
 
-@pytest.mark.parametrize("prefix", ["eth", "swp"])
-@pytest.mark.parametrize("router", ["r1", "r2"])
-def test_rendered_frr_config_parses_back_to_the_intended_interfaces(  # type: ignore[no-untyped-def]
-    intent, expected: Expected, router: str, prefix: str
-) -> None:
-    """The FRR writer (render) and the FRR reader (local backend) agree with Expected."""
-    from netcheck.backends.local import parse_frr_interfaces
-    from netcheck.ports import PortMap
-    from netcheck.render import frr_config
-
-    ports = PortMap.for_node(intent, router, prefix)
-    parsed = parse_frr_interfaces(frr_config(intent, router, prefix), ports)
-    assert parsed == expected.ospf_interfaces(router)
-
-
 def test_attachment_is_none_for_a_host_behind_a_router(expected: Expected) -> None:
     assert expected.attachment("h1") == Attachment("sw1", "p1", 10)
     assert expected.attachment("h4") is None

@@ -8,7 +8,7 @@ CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
 
 .PHONY: install install-clab render lab-up lab-fresh lab-down lab-reset fault-wrong-vlan \
         fault-missing-ospf test-unit test-lab test-lab-live smoke demo \
-        lint typecheck check mutate mutate-lab pin-images
+        lint typecheck check golden mutate mutate-lab pin-images
 
 install:            ## Python deps (uv)
 	uv sync
@@ -63,6 +63,9 @@ typecheck:
 	uv run mypy
 
 check: lint typecheck test-unit
+
+golden:             ## rewrite tests/unit/golden from the current render; then review git diff
+	NETCHECK_UPDATE_GOLDEN=1 uv run pytest tests/unit/test_golden.py -q -rs
 
 mutate:             ## mutation testing over tests/unit (slow; see .claude/skills/mutation-testing)
 	uv run mutmut run
