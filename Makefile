@@ -55,7 +55,11 @@ smoke:
 demo: lab-up        ## 3-5 minute interview demo
 	$(PYTEST) tests/lab -m smoke
 	$(NETCHECK) fault wrong-vlan
-	-$(PYTEST) tests/lab/test_vlan.py -k "isolated and h1-h3"
+	@# must fail: a pass here means the suite cannot see the fault, so the demo stops
+	@if $(PYTEST) tests/lab/test_vlan.py -k "isolated and h1-h3"; then \
+		$(MAKE) lab-reset; \
+		echo "error: the isolation test passed with the wrong-vlan fault applied"; exit 1; \
+	fi
 	$(MAKE) lab-reset
 	$(PYTEST) tests/lab -m resilience
 

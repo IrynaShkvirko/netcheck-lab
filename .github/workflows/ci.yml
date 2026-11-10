@@ -47,6 +47,9 @@ jobs:
       - id: up
         run: make lab-up
       - run: make test-lab
+      # every demo fault must turn the tests it declares red, and the reset must turn them
+      # green again (netcheck/faults.py, netcheck/faultcheck.py); reports in artifacts/fault-check
+      - run: make fault-check
       - name: Upload reports, device logs and captures
         if: always()
         uses: actions/upload-artifact@v4

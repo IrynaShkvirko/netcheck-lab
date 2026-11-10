@@ -115,7 +115,7 @@ Lab commands:
 | `make lab-down` | destroy the lab |
 | `make fault-wrong-vlan` | demo fault: move h3's switch port into VLAN 10 |
 | `make fault-missing-ospf` | demo fault: remove r2's LAN from OSPF |
-| `make fault-check` | inject each fault in turn and prove the tests it declares catch it, then reset |
+| `make fault-check` | inject each fault in turn and prove the tests it declares catch it, then reset (also run in CI) |
 
 ### 4. Run the tests
 
@@ -182,7 +182,8 @@ make demo
 
 1. Smoke tests pass.
 2. `make fault-wrong-vlan` moves h3's switch port into VLAN 10.
-3. The isolation test fails. This is intended; make prints `Error 1 (ignored)` and continues.
+3. The isolation test fails. This is intended and make continues; if the test passed
+   instead, the demo stops with an error, because the suite would have missed the fault.
    The report, from a real run:
 
 ```
@@ -244,7 +245,7 @@ make fault-check            # or: uv run python -m netcheck fault-check wrong-vl
 For each fault it restores the baseline, injects the fault, runs the lab suite, checks every
 declared test failed with its text, restores the baseline again and reruns those tests,
 which must pass. It prints a summary and exits 1 if any fault went unnoticed. Reports go to
-`artifacts/fault-check/<fault>/`. The unit tests hold the
+`artifacts/fault-check/<fault>/`. CI runs it after the lab suite. The unit tests hold the
 declarations to the fake lab for every intent (`tests/unit/test_faultcheck.py`), so a new
 fault without a detecting test fails `make check`.
 
