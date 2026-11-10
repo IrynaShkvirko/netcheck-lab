@@ -23,6 +23,8 @@ It runs on two backends behind one interface:
 ```
 
 Source: [`intent/lab.yaml`](intent/lab.yaml). Ports are logical (`p1`); the local backend maps them to `eth1`, Cumulus to `swp1`.
+Every link between two routers sets `ospf_cost`: the costs decide the path, and the route
+tests check that each router uses the cheapest one (every one of them when costs tie).
 
 ## What the tests prove
 
@@ -137,10 +139,10 @@ Each lab test is written as named steps, and `make test-lab-live` prints them as
 
 ```
 tests/lab/test_ospf.py::test_ospf_route_is_learned[r1-10.0.30.0/24]
-  step 1: Find which router advertises 10.0.30.0/24 in the intent
-  step 2: Check r1 has a Full OSPF adjacency with r2
+  step 1: Work out from the intent's OSPF costs which way r1 reaches 10.0.30.0/24
+  step 2: Check r1 has a Full OSPF adjacency with r2 via p2
   step 3: Wait until 10.0.30.0/24 is installed in r1's routing table
-  step 4: Check the route goes through r2 (10.0.12.1, 10.0.12.3)
+  step 4: Wait until the route goes via r2 (10.0.12.1), the cheapest path
 PASSED
 ```
 
@@ -350,6 +352,7 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
 | `netcheck/testrun.py` | one lab test's run: snapshot, steps, cleanup, restore, failure evidence |
 | `netcheck/pytest_plugin.py` | session lab; turns each test run's outcome and report into pytest results |
 | `tests/unit/` | unit tests over fake transports and a fake lab (`fakes*.py`, NVUE samples in `fixtures/nvue/`) |
+| `tests/unit/golden/`, `tests/unit/intents/` | reviewed render output per intent, and the test-only second intent (see Golden render) |
 | `mutation/lab/` | opt-in mutation-testing profile over the lab suite |
 | `scripts/install-clab.sh` | checked Containerlab install |
 
@@ -373,6 +376,37 @@ intent timers (`dead_interval + 2`).
 - `NETCHECK_SLA_MODE=strict` (default) fails on SLA breach; `record` (CI) records breaches as warnings and JUnit properties.
 - `NETCHECK_NO_DEPLOY=1` makes a run use the running lab or fail with `LabDegraded`, never deploy (set by `make mutate-lab`).
 - `NETCHECK_RESET_ON_START=1` restores the baseline when a run reuses the lab, instead of keeping what the last run left (set by `make mutate-lab`).
+
+## Golden render
+
+`render.py` writes each router's FRR config from the expected state, and the drift tests
+compare the live lab with that same expected state, so a wrong assumption shared by both
+would pass every drift test. Two unit test files break that loop, for every intent in
+`intent/lab.yaml` and `tests/unit/intents/`:
+
+- `tests/unit/test_golden.py` compares the render (topology, FRR configs,
+  `expected_state.json`) with files in `tests/unit/golden/<intent>/` that a person has read.
+  Any change to what would be deployed fails here first, with a diff.
+- `tests/unit/test_render_roundtrip.py` reads the render back the way the devices would: FRR
+  config through the local backend's parser, switch commands through a small model of the
+  Linux bridge, host and router commands as iproute2 applies them, and compares the result
+  with the intent.
+
+`tests/unit/intents/two-site.yaml` is a second shape (three routers, two switches, a VLAN
+spanning both, other timers) that is rendered and checked but never deployed. The real
+`tests/lab` files also run on a healthy fake lab built from it, and all pass. A lab test
+that only works on campus-mini's shape would fail there; `TWO_SITE_ASSUMES_CAMPUS_MINI`
+(`tests/unit/test_review_fixes.py`) records any such test with the reason, and is empty.
+
+After an intended change to rendering, an intent or an image:
+
+```bash
+make golden                       # rewrite tests/unit/golden from the current render
+git diff tests/unit/golden        # read it: this diff is the review
+```
+
+The intent digest is replaced by a placeholder in the golden files, so editing a comment in
+an intent does not touch them.
 
 ## Mutation testing
 

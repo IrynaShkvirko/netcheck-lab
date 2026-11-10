@@ -5,8 +5,9 @@ import pytest
 from netcheck.assertions import (
     assert_ospf_interface_matches_intent,
     assert_ospf_neighbor_full,
+    assert_route_next_hops,
     assert_route_present,
-    check_next_hop,
+    describe_next_hops,
 )
 from netcheck.expected import Adjacency
 from netcheck.lab import Lab
@@ -37,22 +38,26 @@ def test_ospf_adjacency_is_full(lab: Lab, ospf_adjacency: Adjacency) -> None:
 
 
 def test_ospf_route_is_learned(lab: Lab, ospf_route: tuple[str, str]) -> None:
-    """A router learns a prefix another router advertises, through that router."""
+    """A router learns a prefix another router advertises, along the cheapest path the
+    intent's OSPF costs give (every equal-cost path when costs tie)."""
     router_name, prefix = ospf_route
     router = lab[router_name]
 
-    with step(f"Find which router advertises {prefix} in the intent"):
+    with step(f"Work out from the intent's OSPF costs which way {router_name} reaches {prefix}"):
         origin_name = lab.expected.originator(prefix, exclude=router_name)
-        assert origin_name in lab.devices, f"no router in the intent advertises {prefix}"
-        allowed_next_hops = lab.expected.next_hops(router_name, origin_name)
+        hops = lab.expected.ospf_next_hops(router_name, prefix)
+        assert hops, f"the intent gives {router_name} no path to {prefix} (from {origin_name})"
+        # e.g. r1 reaches 10.0.30.0/24, r2's LAN, via r2 over the primary link (cost 10),
+        # not the backup (cost 100)
 
-    with step(f"Check {router_name} has a Full OSPF adjacency with {origin_name}"):
-        assert_ospf_neighbor_full(router, lab[origin_name])
+    for hop in hops:
+        with step(
+            f"Check {router_name} has a Full OSPF adjacency with {hop.neighbor} via {hop.port}"
+        ):
+            assert_ospf_neighbor_full(router, lab[hop.neighbor], port=hop.port)
 
     with step(f"Wait until {prefix} is installed in {router_name}'s routing table"):
-        route = assert_route_present(router, prefix)
+        assert_route_present(router, prefix)
 
-    with step(
-        f"Check the route goes through {origin_name} ({', '.join(sorted(allowed_next_hops))})"
-    ):
-        check_next_hop(router, route, origin_name, allowed_next_hops)
+    with step(f"Wait until the route goes via {describe_next_hops(hops)}, the cheapest path"):
+        assert_route_next_hops(router, prefix, hops)

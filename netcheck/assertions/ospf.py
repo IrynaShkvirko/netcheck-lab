@@ -15,6 +15,7 @@ from netcheck.assertions.common import (
 )
 from netcheck.capabilities import OspfInterface, OspfNeighbor, Route
 from netcheck.device import Device
+from netcheck.expected import NextHop
 from netcheck.lab import Lab, current
 from netcheck.report import DiffLine, FailureReport
 from netcheck.timing import WaitTimeout
@@ -284,18 +285,49 @@ def assert_ospf_interface_matches_intent(router: Device, port: str) -> OspfInter
     return live
 
 
-def check_next_hop(router: Device, route: Route, owner: str, allowed: set[str]) -> None:
-    """`route` leaves `router` through `owner`: one of its next hops is an address of
-    `owner` on a link the two share."""
-    if set(route.next_hops) & allowed:
-        return
-    report = FailureReport(
-        verdict=f"{router.name} must reach {route.prefix} through {owner}",
-        expected=f"next hop in {sorted(allowed)}",
-        actual=f"next hops {list(route.next_hops) or ['(none)']}",
-    )
-    evidence(report, f"{router.name} neighbors", partial(ospf_neighbor_lines, router))
-    fail(report)
+def describe_next_hops(hops: Collection[NextHop]) -> str:
+    """'r2 (10.0.12.1)', or 'r1 (10.0.12.0), r3 (10.0.23.1)' for equal-cost paths."""
+    return ", ".join(f"{h.neighbor} ({h.address})" for h in hops) or "(none)"
+
+
+def assert_route_next_hops(router: Device, prefix: str, hops: Collection[NextHop]) -> Route:
+    """Wait until `router` forwards `prefix` through exactly `hops`: the cheapest paths the
+    intent's OSPF costs give (Expected.ospf_next_hops), every one of them when costs tie.
+
+    Polls rather than checking once: right after a snapshot restore OSPF may still be
+    moving the route back from a backup path. On failure the router's link settings that
+    differ from the intent (a changed cost moves the path) are part of the report.
+    """
+    lab = current()
+    wanted = {h.address for h in hops}
+
+    def lookup() -> Route | None:
+        return router.ospf.routes().get(prefix)
+
+    try:
+        route, _ = lab.timing.wait_until(
+            "route_installed",
+            lookup,
+            lambda r: r is not None and r.installed and set(r.next_hops) == wanted,
+        )
+    except WaitTimeout as exc:
+        last = exc.last if isinstance(exc.last, Route) else None
+        found = f"next hops {list(last.next_hops) or ['(none)']}" if last else "route absent"
+        report = FailureReport(
+            verdict=(
+                f"{router.name} must reach {prefix} via {describe_next_hops(hops)}, "
+                "the cheapest path in the intent"
+            ),
+            expected=f"next hops {sorted(wanted)}",
+            actual=exc.describe(found),
+        )
+        evidence(report, f"{router.name} neighbors", partial(ospf_neighbor_lines, router))
+        report.drift += attempt(
+            report, f"{router.name} OSPF link settings", partial(link_drift, lab, router), []
+        )
+        fail(report)
+    assert route is not None
+    return route
 
 
 def assert_route_uses(router: Device, prefix: str, next_hop: str, why: str = "") -> Route:

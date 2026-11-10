@@ -37,6 +37,16 @@ class Adjacency:
 
 
 @dataclass(frozen=True)
+class NextHop:
+    """The first hop of a cheapest OSPF path: the neighbor, the local port towards it,
+    and the neighbor's address on that link (what the routing table shows)."""
+
+    neighbor: str
+    port: str
+    address: str
+
+
+@dataclass(frozen=True)
 class FailoverPlan:
     """What the failover test needs, all derived from the intent."""
 
@@ -47,6 +57,9 @@ class FailoverPlan:
     prefix: str  # LAN behind the far router
     src: str  # host sending traffic
     dst: str  # host on the far LAN
+
+
+INFINITE = float("inf")
 
 
 def _network(ip: str) -> str:
@@ -94,15 +107,57 @@ class Expected:
         owners = [r for r, ps in self._originated.items() if prefix in ps and r != exclude]
         return owners[0] if owners else "?"
 
-    def next_hops(self, router: str, peer: str) -> set[str]:
-        """`peer`'s addresses (no prefix length) on the routed links it shares with
-        `router`: the next hops `router` may use towards `peer`."""
-        out = set()
-        for lk in self.intent.links_of(router):
-            far = lk.peer(router)
-            if lk.routed and far.node == peer and far.ip:
-                out.add(far.ip.split("/")[0])
-        return out
+    def ospf_next_hops(self, router: str, prefix: str) -> list[NextHop]:
+        """The first hops `router` must use for `prefix` while every link is up.
+
+        Each link from `router` that starts a cheapest path to a router originating the
+        prefix gives one, so equal-cost paths give several (OSPF installs them all). A
+        path costs the sum of its links' ospf_cost. The originating interface's cost is
+        left out: only the network of a link between two routers has two originators, and
+        both add that link's cost, so it never changes which path wins. Empty if `router`
+        originates the prefix itself or no router reaches it.
+        """
+        if prefix in self._originated.get(router, set()):
+            return []
+        costs = self._path_costs()
+        origins = [
+            o
+            for o, prefixes in self._originated.items()
+            if o != router and prefix in prefixes and costs[router][o] != INFINITE
+        ]
+        if not origins:
+            return []
+
+        best = min(costs[router][o] for o in origins)
+        hops = set()
+        for origin in (o for o in origins if costs[router][o] == best):
+            for lk in self._core_links():
+                if router not in (lk.a.node, lk.b.node):
+                    continue
+                far = lk.peer(router)
+                if (lk.ospf_cost or 0) + costs[far.node][origin] == costs[router][origin]:
+                    address = (far.ip or "").split("/")[0]
+                    hops.add(NextHop(far.node, lk.endpoint(router).port, address))
+        return sorted(hops, key=lambda h: (h.neighbor, h.port))
+
+    def _core_links(self) -> list[Link]:
+        """Routed links between two routers: where OSPF paths run."""
+        routers = set(self._routers)
+        return [lk for lk in self.intent.links if lk.routed and {lk.a.node, lk.b.node} <= routers]
+
+    def _path_costs(self) -> dict[str, dict[str, float]]:
+        """Cheapest OSPF cost between every two routers (Floyd-Warshall over the core
+        links' ospf_cost, which validation requires)."""
+        cost = {a: {b: 0.0 if a == b else INFINITE for b in self._routers} for a in self._routers}
+        for lk in self._core_links():
+            a, b = lk.a.node, lk.b.node
+            cost[a][b] = cost[b][a] = min(cost[a][b], float(lk.ospf_cost or 0))
+        for via in self._routers:
+            for a in self._routers:
+                for b in self._routers:
+                    if cost[a][via] + cost[via][b] < cost[a][b]:
+                        cost[a][b] = cost[a][via] + cost[via][b]
+        return cost
 
     def adjacencies(self) -> list[Adjacency]:
         """Every OSPF adjacency, from both ends, grouped by router."""
