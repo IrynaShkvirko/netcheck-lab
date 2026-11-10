@@ -7,7 +7,7 @@ PYTEST   = uv run pytest --backend $(BACKEND) --junitxml=artifacts/junit.xml
 CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
 
 .PHONY: install install-clab render lab-up lab-fresh lab-down lab-reset fault-wrong-vlan \
-        fault-missing-ospf fault-check test-unit test-lab test-lab-live smoke demo \
+        fault-missing-ospf fault-check record-fixtures test-unit test-lab test-lab-live smoke demo \
         lint typecheck check golden mutate mutate-lab pin-images
 
 install:            ## Python deps (uv)
@@ -39,6 +39,9 @@ fault-missing-ospf:
 
 fault-check:        ## inject each fault, prove the lab tests it declares catch it, reset
 	$(NETCHECK) fault-check
+
+record-fixtures:    ## record the lab's real FRR/iproute2 output as unit-test samples (lab up)
+	$(NETCHECK) record-fixtures
 
 test-unit:
 	uv run pytest tests/unit
