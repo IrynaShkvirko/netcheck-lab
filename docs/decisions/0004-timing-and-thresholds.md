@@ -71,3 +71,30 @@ Values live in `timing.yaml`, per backend profile, and may reference intent time
   of borrowing `route_installed`.
 - The failover test now checks the starting path: before the failure, traffic must use the
   primary next hop. Without that, a lab already on the backup path "converged" in 0 s.
+
+## Revision (2026-11-10, SLA as a gate)
+
+A review found the failover SLA gated nothing: CI ran in `record` mode, the 2 s SLA sat 30x
+above the measured 0.06 s outage, nobody read the recorded numbers, and two "SLAs" timed a
+poll on a lab that had long converged.
+
+- **Outage from the achieved send rate.** `ping` reports its elapsed time; outage = lost
+  probes x (elapsed / gaps), not x the 10 ms asked for. On a busy machine the stream sends
+  slower and each lost probe stands for more time; the nominal interval under-reported the
+  outage. The achieved interval is the measurement's resolution and is observed
+  (`reconverge_local_link_stream_interval`). BusyBox prints no time: then the asked interval.
+- **Median of repeated runs.** `NETCHECK_REPEATS=N` runs the failover N times (the link comes
+  back and the route returns to the primary in between); each run is observed
+  (`reconverge_local_link_run`) and the median is held to the SLA, so one noisy run neither
+  fails nor passes the check. Default 1.
+- **Poll durations are not measurements.** `ospf_neighbor_full` and `route_installed` lose
+  their SLA and are no longer recorded: on a converged lab they time the first `docker exec`.
+  They remain timeouts.
+- **History and summary.** Each lab session writes `artifacts/measurements.json` and appends it
+  to `NETCHECK_HISTORY` (default `.netcheck/measurements.jsonl`). `python -m netcheck summary`
+  prints this run next to the median of earlier runs of the same backend and intent; both CI
+  jobs put it in the job summary. Fault-check sessions keep their own history.
+- **Nightly gate.** `.github/workflows/nightly.yml` runs the lab suite in `strict` mode with
+  `NETCHECK_REPEATS=5`, the history carried in the Actions cache. PR runs stay in `record`.
+- **The SLA comes from measurements**: about three times the p95 of the per-run outages,
+  rounded up, then revisited when the nightly history shows the CI runners' numbers.

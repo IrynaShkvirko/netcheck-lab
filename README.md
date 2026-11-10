@@ -168,7 +168,7 @@ When faults are applied, every pytest run says so in its header
 | Output | Where |
 | --- | --- |
 | Pass/fail and failure reports | the console |
-| Measured timings (convergence, adjacency) | `netcheck measurements` section at the end of the run |
+| Measured timings (failover outage per run and median, control plane, stream resolution) | `netcheck measurements` section at the end of the run; `artifacts/measurements.json`; history in `.netcheck/measurements.jsonl` |
 | JUnit XML for CI | `artifacts/junit.xml` (measurements as `<properties>`) |
 | Per failed test | `artifacts/<test-id>/report.txt`, `report.json`, `logs/<device>.jsonl`, `*.pcap` |
 | Cleanup problems | `artifacts/<test-id>/cleanup-errors.txt` |
@@ -399,6 +399,13 @@ intent timers (`dead_interval + 2`).
 - `NETCHECK_SLA_MODE=strict` (default) fails on SLA breach; `record` (CI) records breaches as warnings and JUnit properties.
 - `NETCHECK_NO_DEPLOY=1` makes a run use the running lab or fail with `LabDegraded`, never deploy (set by `make mutate-lab`).
 - `NETCHECK_RESET_ON_START=1` restores the baseline when a run reuses the lab, instead of keeping what the last run left (set by `make mutate-lab`).
+- `NETCHECK_REPEATS=N` runs the failover N times and holds the median outage to its SLA (the nightly job uses 5). The outage is lost probes x the interval the ping stream really achieved.
+- `NETCHECK_HISTORY` is where each lab session appends its measurements (default `.netcheck/measurements.jsonl`); `uv run python -m netcheck summary` prints the last run next to the median of earlier ones, as Markdown.
+
+PR CI records SLAs; the nightly workflow (`.github/workflows/nightly.yml`) gates them, in strict
+mode with 5 repeats, and keeps the history between nights. Both put the summary on the job page.
+Waits without an SLA (`ospf_neighbor_full`, `route_installed`) only bound polling and are not
+recorded: how long a poll takes on a converged lab measures nothing.
 
 ## Golden render
 
