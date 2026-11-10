@@ -78,6 +78,7 @@ def router_exec(intent: Intent, router: str, prefix: str = "eth") -> list[str]:
 # ---- Linux switch and hosts (executed by containerlab after start) ------
 
 BRIDGE = "br0"  # the VLAN-aware bridge on Linux switches; not a port itself
+MGMT_IFACE = "eth0"  # Containerlab's management interface on every node; never a lab port
 
 
 def switch_exec(intent: Intent, switch: str, prefix: str = "eth") -> list[str]:
@@ -102,7 +103,12 @@ def host_exec(intent: Intent, host: str, prefix: str = "eth") -> list[str]:
     ifname = port_name(lk.endpoint(host).port, prefix)
     cmds = [f"ip addr add {node.ip} dev {ifname}", f"ip link set {ifname} up"]
     if node.gateway:
+        # replaces the default route Docker gives every container on the management network
         cmds.append(f"ip route replace default via {node.gateway} dev {ifname}")
+    else:
+        # no gateway in the intent means no route off the subnet: drop the management one
+        # (Containerlab's eth0), or traffic to other subnets would leave through it
+        cmds.append(f"ip route del default dev {MGMT_IFACE}")
     return cmds
 
 

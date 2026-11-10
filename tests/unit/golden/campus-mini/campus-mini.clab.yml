@@ -74,6 +74,7 @@ topology:
       exec:
       - ip addr add 10.0.20.13/24 dev eth1
       - ip link set eth1 up
+      - ip route del default dev eth0
     h4:
       kind: linux
       image: ghcr.io/hellt/network-multitool:latest
