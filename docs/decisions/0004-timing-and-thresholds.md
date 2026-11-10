@@ -34,7 +34,7 @@ Values live in `timing.yaml`, per backend profile, and may reference intent time
 | OSPF neighbor Full | 10 s | 30 s | 1 s |
 | Route installed after Full | 5 s | 15 s | 0.5 s |
 | VLAN change applied | 5 s | 15 s | 1 s |
-| Reconvergence, local link down | 2 s | 10 s | traffic |
+| Reconvergence, local link down | 0.2 s (2 s until 2026-11-10) | 10 s | traffic |
 | Reconvergence, remote failure, no BFD | dead_interval + 2 | 15 s | traffic |
 | Reconvergence with BFD (300 ms x 3) | 1.5 s | 5 s | traffic |
 | Isolation (negative check) | 0 replies | fixed 4 s window | - |
@@ -98,3 +98,10 @@ poll on a lab that had long converged.
   `NETCHECK_REPEATS=5`, the history carried in the Actions cache. PR runs stay in `record`.
 - **The SLA comes from measurements**: about three times the p95 of the per-run outages,
   rounded up, then revisited when the nightly history shows the CI runners' numbers.
+  First set from 10 runs on the local lab (Containerlab 0.76, FRR 10.1, OrbStack on Apple
+  Silicon, `NETCHECK_REPEATS=10`, strict): outage 0.012-0.061 s per run, median 0.012 s
+  (1 to 5 lost probes); achieved stream interval 12 ms, not the 10 ms asked for, so the old
+  formula under-reported every outage by 20%; control plane 0.049-0.060 s. With 10 runs the
+  p95 is the maximum, 0.061 s: 3 x 0.061 rounded up gives **0.2 s**, down from 2 s. If the
+  nightly median on GitHub's runners sits near it, raise it from that history, not by
+  feel; `NETCHECK_TIME_FACTOR` never scales SLAs.

@@ -13,7 +13,8 @@ profiles:
     route_installed:           {timeout: 15, poll: 0.5}
     reachability:              {timeout: 15, poll: 0.5}
     vlan_change_applied:       {sla: 5,  timeout: 15, poll: 1}
-    reconverge_local_link:     {sla: 2,  timeout: 10, poll: 0.2, stream_interval: 0.01}
+    # 3x the p95 of measured runs, rounded up (ADR-0004, 2026-11-10: 10 runs, 0.012-0.061 s)
+    reconverge_local_link:     {sla: 0.2, timeout: 10, poll: 0.2, stream_interval: 0.01}
     reconverge_remote_no_bfd:  {sla: "dead_interval + 2", timeout: 15, poll: 0.2, stream_interval: 0.01}
     reconverge_bfd:            {sla: 1.5, timeout: 5, poll: 0.1, stream_interval: 0.01}
     isolation_window:          {window: 4}
