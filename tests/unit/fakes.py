@@ -88,13 +88,17 @@ class FakeLinks(Links):
 
 
 class FakeShell(Shell):
-    """Ping succeeds when FakeWorld says the two hosts reach each other. An on-link route
-    to the destination (the isolation test adds one) means layer 2 only."""
+    """Ping succeeds when FakeWorld says the host reaches the address. An on-link route to
+    the destination (the isolation test adds one) means layer 2 only. A ping resolved over
+    layer 2 leaves a neighbor entry, REACHABLE or FAILED, as the kernel does;
+    `arp_silent` stands for a host whose probes never reach the wire (no entry)."""
 
     def __init__(self, name: str, world: FakeWorld) -> None:
         self.name = name
         self.world = world
         self.routes: list[str] = []
+        self.neigh: dict[str, str] = {}  # address -> state
+        self.arp_silent = False
 
     def ping(
         self,
@@ -107,6 +111,8 @@ class FakeShell(Shell):
     ) -> PingResult:
         on_link = f"{dst}/32" in self.routes
         reached = self.world.reaches(self.name, dst, on_link=on_link)
+        if (on_link or self.world.same_subnet(self.name, dst)) and not self.arp_silent:
+            self.neigh[dst] = "REACHABLE" if reached else "FAILED"
         return PingResult(self.name, dst, count, count if reached else 0)
 
     def add_host_route(self, prefix: str, port: str = "p1") -> None:
@@ -116,10 +122,14 @@ class FakeShell(Shell):
         self.routes.remove(prefix)
 
     def flush_neighbors(self, port: str = "p1") -> None:
-        pass
+        self.neigh.clear()
 
-    def neighbors(self) -> list[dict[str, str]]:
-        return [{"dst": "10.0.20.13", "lladdr": "aa:c1:ab:00:00:03", "state": "REACHABLE"}]
+    def neighbors(self) -> list[dict[str, Any]]:
+        return [
+            {"dst": ip, "state": [state]}
+            | ({"lladdr": f"aa:c1:ab:00:00:{ip.split('.')[-1]}"} if state == "REACHABLE" else {})
+            for ip, state in sorted(self.neigh.items())
+        ]
 
     def start_capture(self, port: str, bpf: str = "") -> CaptureHandle:
         return CaptureHandle(self.name, port, "/tmp/x.pcap", "1")
@@ -182,18 +192,38 @@ class FakeWorld:
 
     Two hosts share a broadcast domain when the access VLAN of one is on the other's port
     and every trunk between their switches carries it, read from the fake bridges' current
-    state (so an injected wrong-VLAN fault joins them). Without an on-link route, a ping
-    also gets replies when both hosts have a default gateway: the fake routers route
-    between every LAN.
+    state (so an injected wrong-VLAN fault joins them). A ping goes over layer 2 when it
+    has an on-link route or the address is in the sender's subnet; otherwise it goes to
+    the gateway, and gets replies when both hosts have one (the fake routers route between
+    every LAN) or when `leaks` joins the pair (a router that should not). A VLAN gateway's
+    address answers a host whose port carries that VLAN.
     """
 
     def __init__(self, intent: Intent) -> None:
         self.intent = intent
         self.expected = Expected(intent)
         self.bridges: dict[str, FakeBridge] = {}  # by switch, filled by FakeFactory
+        self.leaks: set[frozenset[str]] = set()  # host pairs a router joins by mistake
 
-    def host_at(self, ip: str) -> str:
-        return next(n.name for n in self.intent.nodes.values() if n.ip and n.ip.split("/")[0] == ip)
+    def host_at(self, ip: str) -> str | None:
+        return next(
+            (n.name for n in self.intent.nodes.values() if n.ip and n.ip.split("/")[0] == ip),
+            None,
+        )
+
+    def same_subnet(self, src: str, dst_ip: str) -> bool:
+        net = ipaddress.ip_interface(self.intent.nodes[src].ip or "").network
+        return ipaddress.ip_address(dst_ip) in net
+
+    def _gateway_vlan(self, ip: str) -> int | None:
+        return next(
+            (
+                vid
+                for vid, v in self.intent.vlans.items()
+                if v.gateway_ip and v.gateway_ip.split("/")[0] == ip
+            ),
+            None,
+        )
 
     def _vlans(self, switch: str, port: str) -> set[int]:
         pv = self.bridges[switch].ports.get(port)
@@ -228,10 +258,14 @@ class FakeWorld:
 
     def reaches(self, src: str, dst_ip: str, *, on_link: bool) -> bool:
         dst = self.host_at(dst_ip)
-        if self.same_l2(src, dst):
-            return True
+        if dst is None:  # a VLAN gateway's address
+            vid, at = self._gateway_vlan(dst_ip), self.expected.attachment(src)
+            return vid is not None and at is not None and vid in self._vlans(at.switch, at.port)
+        if on_link or self.same_subnet(src, dst_ip):
+            return self.same_l2(src, dst)
         nodes = self.intent.nodes
-        return not on_link and bool(nodes[src].gateway and nodes[dst].gateway)
+        both_routed = bool(nodes[src].gateway and nodes[dst].gateway)
+        return both_routed or frozenset((src, dst)) in self.leaks
 
 
 DEFAULT_OSPF_COST = 10  # a link the intent gives no ospf_cost (FRR would derive one)

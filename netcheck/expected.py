@@ -237,6 +237,43 @@ class Expected:
                 return Attachment(peer.node, peer.port, lk.vlan)
         return None
 
+    def broadcast_domain(self, host: str) -> list[str]:
+        """The other hosts that share `host`'s broadcast domain by the intent: on access
+        ports of its VLAN, on its switch or on a switch joined to it by trunks that carry
+        the VLAN. Empty for a host on a router or alone in its VLAN."""
+        at = self.attachment(host)
+        if at is None or at.vlan is None:
+            return []
+        switches, todo = {at.switch}, [at.switch]
+        while todo:
+            here = todo.pop()
+            for lk in self.intent.links_of(here):
+                far = lk.peer(here).node
+                if (
+                    lk.mode == "trunk"
+                    and at.vlan in lk.vlans
+                    and self.intent.nodes[far].role == "switch"
+                    and far not in switches
+                ):
+                    switches.add(far)
+                    todo.append(far)
+        return sorted(
+            h.name
+            for h in self.intent.by_role("host")
+            if h.name != host
+            and (other := self.attachment(h.name)) is not None
+            and other.switch in switches
+            and other.vlan == at.vlan
+        )
+
+    def vlan_gateway(self, host: str) -> tuple[str, str] | None:
+        """(router, address) of the gateway in `host`'s VLAN; None if the VLAN has none."""
+        at = self.attachment(host)
+        vlan = self.intent.vlans.get(at.vlan) if at and at.vlan is not None else None
+        if vlan is None or not vlan.gateway_node or not vlan.gateway_ip:
+            return None
+        return vlan.gateway_node, vlan.gateway_ip.split("/")[0]
+
     def reachable_pairs(self) -> list[tuple[str, str]]:
         return [(a, b) for a, b in self.intent.reachable]
 

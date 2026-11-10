@@ -2,17 +2,26 @@
 
 The isolation check is split into the pieces a test runs as separate steps:
 
-    force_layer2_path(a, b)            # on-link routes, empty ARP caches
-    capture = start_capture(...)       # evidence on the receiving host
+    check_not_routed(a, b)                # no router joins the VLANs
+    force_layer2_path(a, b)               # on-link routes, empty ARP caches
+    capture = start_capture(...)          # evidence on the receiving host
     result = send_isolation_probes(a, b)
     check_no_replies(a, b, result, capture)
+    check_probes_reached_the_wire(a, b)   # a really sent ARP for b
+    check_layer2_control(a, b, control_target(a))  # a reaches its own VLAN: a works
 
-`assert_isolated` runs all four in order.
+`assert_isolated` runs them all in order. A reply from b fails at once: isolation is
+broken whatever else is wrong. Zero replies proves isolation only when a could have got
+one, so the last two checks validate the silence: the probes left a, and a's link, port
+and VLAN work (a reaches a host or gateway in its own VLAN over the same kind of path).
 """
 
 from __future__ import annotations
 
+import ipaddress
+import warnings
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from functools import partial
 
 from netcheck.assertions.common import (
@@ -28,6 +37,7 @@ from netcheck.capabilities import CaptureHandle, PingResult, PortVlans
 from netcheck.device import Device
 from netcheck.lab import Lab, current
 from netcheck.report import DiffLine, FailureReport
+from netcheck.timing import WaitTimeout
 
 PROBE_INTERVAL = 0.2  # seconds between isolation probes
 
@@ -84,6 +94,17 @@ def _undo_route(host: Device, prefix: str) -> Callable[[], None]:
     return lambda: host.shell.del_host_route(prefix)
 
 
+def _force_on_link(host: Device, peer_ip: str) -> None:
+    """An on-link /32 route from `host` to `peer_ip` (registered for cleanup at once) and
+    an empty ARP cache: `host` must ARP for the peer itself."""
+    lab = current()
+    host.shell.add_host_route(f"{peer_ip}/32")
+    lab.cleanup.register(
+        f"remove on-link route {peer_ip}/32 on {host.name}", _undo_route(host, f"{peer_ip}/32")
+    )
+    host.shell.flush_neighbors()
+
+
 def force_layer2_path(a: Device, b: Device) -> None:
     """Make a reply possible only if a and b share a broadcast domain.
 
@@ -93,13 +114,160 @@ def force_layer2_path(a: Device, b: Device) -> None:
     The routes are registered for cleanup the moment they are added.
     """
     lab = current()
-    ip_a, ip_b = lab.intent.host_ip(a.name), lab.intent.host_ip(b.name)
-    for host, peer_ip in ((a, ip_b), (b, ip_a)):
-        host.shell.add_host_route(f"{peer_ip}/32")
-        lab.cleanup.register(
-            f"remove on-link route {peer_ip}/32 on {host.name}", _undo_route(host, f"{peer_ip}/32")
+    _force_on_link(a, lab.intent.host_ip(b.name))
+    _force_on_link(b, lab.intent.host_ip(a.name))
+
+
+# ---- the controls around the isolation probe ----------------------------------------
+
+
+@dataclass(frozen=True)
+class ControlTarget:
+    """Something in the sender's own VLAN to prove its path works: a host, or the VLAN's
+    gateway when no other host shares the VLAN."""
+
+    name: str  # "h2", or "r1 (VLAN 10 gateway)"
+    ip: str
+    host: str | None  # the host's name; None for a gateway
+
+
+def control_target(a: Device) -> ControlTarget | None:
+    """What in a's own VLAN proves a's path, depending on as little else as possible: a
+    host on a's switch, else the VLAN's gateway, else a host on another switch of the VLAN,
+    else None."""
+    lab = current()
+    at = lab.expected.attachment(a.name)
+    if at is None:
+        return None
+    peers = lab.expected.broadcast_domain(a.name)
+    local = [h for h in peers if (pa := lab.expected.attachment(h)) and pa.switch == at.switch]
+    if local:
+        return ControlTarget(local[0], lab.intent.host_ip(local[0]), local[0])
+    gateway = lab.expected.vlan_gateway(a.name)
+    if gateway:
+        router, ip = gateway
+        return ControlTarget(f"{router} (VLAN {at.vlan} gateway)", ip, None)
+    if peers:
+        return ControlTarget(peers[0], lab.intent.host_ip(peers[0]), peers[0])
+    return None
+
+
+def check_layer2_control(a: Device, b: Device, target: ControlTarget | None) -> None:
+    """a reaches `target`, in its own VLAN, over the same kind of forced layer 2 path the
+    isolation probe used. Without it, silence from b could mean a's own link, port or VLAN
+    is broken, not that the VLANs keep a and b apart. Run after the probe got no reply:
+    it flushes a's neighbor table. Retries until the `reachability` timeout.
+
+    With no target (a is alone in a VLAN without a gateway) nothing can prove the path:
+    that is a warning, not a failure, since the intent allows it.
+    """
+    lab = current()
+    if target is None:
+        warnings.warn(
+            f"isolation {a.name}-{b.name}: no host or gateway shares {a.name}'s VLAN, so the "
+            "path the probe takes cannot be proven",
+            stacklevel=2,
         )
-        host.shell.flush_neighbors()
+        return
+    _force_on_link(a, target.ip)
+    if target.host is not None:
+        _force_on_link(lab[target.host], lab.intent.host_ip(a.name))
+    try:
+        lab.timing.wait_until(
+            "reachability",
+            lambda: a.shell.ping(target.ip, count=3, interval=PROBE_INTERVAL, deadline=3),
+            lambda r: r.ran and r.received > 0,
+        )
+    except WaitTimeout as exc:
+        last = exc.last if isinstance(exc.last, PingResult) else None
+        if last is None:
+            actual = exc.describe("no result")
+        else:
+            actual = last.error or f"{last.received}/{last.sent} replies"
+        report = FailureReport(
+            verdict=(
+                f"isolation {a.name}-{b.name} inconclusive: {a.name} cannot reach "
+                f"{target.name} ({target.ip}), in its own VLAN, over layer 2"
+            ),
+            expected=f"replies from {target.ip}: proof that {a.name}'s path works",
+            actual=actual,
+        )
+        # the ports both ends hang off: the drift that explains a broken path
+        ports: dict[str, list[str]] = {}
+        for host in (a.name, target.host):
+            at = lab.expected.attachment(host) if host else None
+            if at is not None:
+                ports.setdefault(at.switch, []).append(at.port)
+        for switch, switch_ports in sorted(ports.items()):
+            drift, vlans = attempt(
+                report,
+                f"{switch} VLAN membership",
+                partial(vlan_drift, lab, switch, switch_ports),
+                (list[DiffLine](), list[str]()),
+            )
+            report.drift += drift
+            if vlans:
+                report.add_evidence(f"{switch} VLAN membership", vlans)
+        evidence(report, f"{a.name} link", lambda: [a.links.link_state("p1").line()])
+        evidence(report, f"{a.name} neighbor table", partial(_arp_table, a))
+        fail(report)
+
+
+def check_not_routed(a: Device, b: Device) -> PingResult | None:
+    """b does not answer a through a router either: no router may join the two VLANs.
+
+    Probes b's address over a's normal routes for the full isolation window. Only when the
+    intent gives a a gateway: without one a has no route to b and there is nothing to
+    probe (returns None).
+    """
+    lab = current()
+    if not lab.intent.nodes[a.name].gateway:
+        return None
+    result = _probe(a, b)
+    if result.received == 0:
+        return result
+    report = FailureReport(
+        verdict=f"{a.name} and {b.name} must be isolated, also through a router",
+        expected=f"0/{result.sent} ICMP replies {a.name} -> {b.name} over {a.name}'s routes",
+        actual=f"{result.received}/{result.sent} replies",
+    )
+    net = ipaddress.ip_interface(lab.intent.nodes[b.name].ip or "").network
+    for router in lab.by_role("router"):
+        evidence(report, f"{router.name} interfaces in {net}", partial(_interfaces_in, router, net))
+    fail(report)
+
+
+def check_probes_reached_the_wire(a: Device, b: Device) -> None:
+    """After isolation probes that got no reply, a must have tried to resolve b by ARP:
+    a neighbor entry for b (FAILED or INCOMPLETE). No entry means no probe left a, and
+    silence from b proves nothing."""
+    lab = current()
+    ip_b = lab.intent.host_ip(b.name)
+    if any(e.get("dst") == ip_b for e in a.shell.neighbors()):
+        return
+    report = FailureReport(
+        verdict=(
+            f"isolation {a.name}-{b.name} inconclusive: {a.name} never sent an ARP request "
+            f"for {b.name} ({ip_b})"
+        ),
+        expected=f"a neighbor entry for {ip_b} on {a.name} (FAILED or INCOMPLETE)",
+        actual="no entry: no probe reached the wire",
+    )
+    evidence(report, f"{a.name} neighbor table", partial(_arp_table, a))
+    fail(report)
+
+
+def _arp_table(host: Device) -> list[str]:
+    return [arp_line(n) for n in host.shell.neighbors()]
+
+
+def _interfaces_in(router: Device, net: ipaddress.IPv4Network | ipaddress.IPv6Network) -> list[str]:
+    return [
+        f"{name} {address}"
+        for name, s in sorted(router.ospf.interface_settings().items())
+        for address in s.addresses
+        if ipaddress.ip_interface(address).network.overlaps(net)
+    ]
 
 
 def isolation_probe_count() -> int:
@@ -112,6 +280,11 @@ def send_isolation_probes(a: Device, b: Device) -> PingResult:
 
     A ping that did not run makes the check inconclusive: that fails, it does not pass.
     """
+    return _probe(a, b)
+
+
+def _probe(a: Device, b: Device) -> PingResult:
+    """Ping b's address from a for the isolation window; fail if no probe was sent."""
     lab = current()
     window = lab.timing["isolation_window"].window or 4.0
     count = isolation_probe_count()
@@ -158,18 +331,22 @@ def check_no_replies(
         report.drift += drift
         if vlans:
             report.add_evidence(f"{sw} VLAN membership", vlans)
-    evidence(report, f"{a.name} neighbor table", lambda: [arp_line(n) for n in a.shell.neighbors()])
+    evidence(report, f"{a.name} neighbor table", partial(_arp_table, a))
     finish_capture(lab, b, capture, report)
     fail(report)
 
 
 def assert_isolated(a: Device, b: Device) -> PingResult:
-    """a and b must not share a broadcast domain (all isolation steps in one call)."""
+    """a and b must not reach each other, at layer 2 or through a router (all isolation
+    steps in one call)."""
     lab = current()
+    check_not_routed(a, b)
     force_layer2_path(a, b)
     capture = start_capture(lab, b, "p1", "icmp or arp")
     result = send_isolation_probes(a, b)
     check_no_replies(a, b, result, capture)
+    check_probes_reached_the_wire(a, b)
+    check_layer2_control(a, b, control_target(a))
     return result
 
 
