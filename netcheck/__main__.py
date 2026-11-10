@@ -85,10 +85,18 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
             print("error: record-fixtures records the local backend; for NVIDIA use record_samples")
             return 1
         from netcheck.backends.local import LocalBackend
-        from netcheck.backends.local_samples import record_local_samples
+        from netcheck.backends.local_samples import NotConverged, record_local_samples
 
         dest = ROOT / "tests" / "unit" / "fixtures" / "local"
-        written = record_local_samples(cast(LocalBackend, backend), dest)
+        from netcheck.timing import Timing
+
+        intent = backend.intent
+        timing = Timing.load(ROOT / "timing.yaml", backend.timing_profile, intent.timer_vars())
+        try:
+            written = record_local_samples(cast(LocalBackend, backend), dest, timing)
+        except NotConverged as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         where = dest.relative_to(ROOT)
         print(f"recorded {len(written)} devices into {where} (provenance.yaml updated)")
         print("review `git diff tests/unit/fixtures/local`, then run `make check`")

@@ -1,12 +1,13 @@
 """Record what the local lab's devices really answer, as unit-test samples.
 
 `python -m netcheck record-fixtures` (`make record-fixtures`) restores the lab to its
-baseline, then drives every device through the local backend's own adapters with a
-recording transport around `docker exec`: link states, OSPF neighbors, routes, LSDB and
-running config, bridge VLANs, host routes, and pings to each host's reachable and isolated
-peers. Each device's calls (command, exit code, stdout, stderr) go to
-tests/unit/fixtures/local/<device>.json, marked captured in provenance.yaml with the FRR
-version and images.
+baseline and waits until OSPF has converged (every intended adjacency Full, every intended
+route installed: a lab just deployed is still converging). Then it drives every device
+through the local backend's own adapters with a recording transport around `docker exec`:
+link states, OSPF neighbors, routes, LSDB and running config, bridge VLANs, host routes,
+and pings to each host's reachable and isolated peers. Each device's calls (command, exit
+code, stdout, stderr) go to tests/unit/fixtures/local/<device>.json, marked captured in
+provenance.yaml with the FRR version and images.
 
 Because the samples are the adapters' own commands, the contract tests replay them through
 the same adapters: a parser that misreads FRR or iproute2 output fails there, and so does
@@ -25,7 +26,12 @@ from netcheck.assembly import DeviceSpec, assemble
 from netcheck.backends.local import LinuxShell, LocalBackend, LocalFactory
 from netcheck.capabilities import Bridge, Links, Ospf
 from netcheck.expected import Expected
+from netcheck.timing import Timing, WaitTimeout
 from netcheck.transport.base import CommandResult, CommandTransport
+
+
+class NotConverged(RuntimeError):
+    """The lab did not reach the intended state in time; nothing was recorded."""
 
 
 def ping(shell: LinuxShell, dst: str) -> Any:
@@ -77,10 +83,46 @@ def exercise(devices: dict[str, Any], expected: Expected) -> None:
             shell.neighbors()
 
 
-def record_local_samples(backend: LocalBackend, dest: Path) -> list[Path]:
-    """Restore the baseline, record every device's answers into `dest`, mark them captured.
-    Returns the files written."""
+def ospf_gaps(devices: dict[str, Any], expected: Expected) -> list[str]:
+    """What still differs from converged OSPF: adjacencies not Full, routes not installed."""
+    gaps = []
+    for router in expected.routers():
+        ospf = devices[router].ospf
+        full = sorted((n.router_id, n.port) for n in ospf.neighbors() if n.state == "Full")
+        want = sorted(
+            (a.router_id, a.local_port) for a in expected.adjacencies() if a.router == router
+        )
+        gaps += [
+            f"{router}: adjacency {rid} via {port} not Full"
+            for rid, port in want
+            if (rid, port) not in full
+        ]
+        installed = {p for p, r in ospf.routes().items() if r.installed}
+        gaps += [
+            f"{router}: route {p} not installed"
+            for p in sorted(expected.routes(router) - installed)
+        ]
+    return gaps
+
+
+def wait_converged(devices: dict[str, Any], expected: Expected, timing: Timing) -> None:
+    """Poll until ospf_gaps is empty, within the ospf_neighbor_full timeout; raise
+    NotConverged with what was still missing."""
+    try:
+        timing.wait_until(
+            "ospf_neighbor_full", lambda: ospf_gaps(devices, expected), lambda g: not g
+        )
+    except WaitTimeout as exc:
+        missing = "; ".join(exc.last) if isinstance(exc.last, list) else exc.describe("unknown")
+        raise NotConverged(f"OSPF has not converged, nothing recorded: {missing}") from exc
+
+
+def record_local_samples(backend: LocalBackend, dest: Path, timing: Timing) -> list[Path]:
+    """Restore the baseline, wait for OSPF to converge, record every device's answers into
+    `dest` and mark them captured. Returns the files written."""
     backend.reset()  # a healthy lab: the samples must show the intended state
+    expected = Expected(backend.intent)
+    wait_converged(backend.devices(), expected, timing)
     recorders: dict[str, RecordingTransport] = {}
 
     def open_transport(spec: DeviceSpec) -> CommandTransport:
@@ -89,7 +131,7 @@ def record_local_samples(backend: LocalBackend, dest: Path) -> list[Path]:
 
     factory = LocalFactory(open_transport)
     devices = assemble(backend.intent, backend.name, backend.prefix, factory)
-    exercise(devices, Expected(backend.intent))
+    exercise(devices, expected)
 
     dest.mkdir(parents=True, exist_ok=True)
     written = []
