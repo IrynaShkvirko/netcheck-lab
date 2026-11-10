@@ -99,6 +99,7 @@ class FakeShell(Shell):
         self.routes: list[str] = []
         self.neigh: dict[str, str] = {}  # address -> state
         self.arp_silent = False
+        self.lost_per_stream: list[int] = []  # probes lost in each ping stream, in order
 
     def ping(
         self,
@@ -149,7 +150,9 @@ class FakeShell(Shell):
         return "1:/tmp/s"
 
     def stop_stream(self, token: str) -> PingResult:
-        return PingResult(self.name, "stream", 300, 290)
+        """1000 probes, 10 lost; or the next of `lost_per_stream`, one per measurement."""
+        lost = self.lost_per_stream.pop(0) if self.lost_per_stream else 10
+        return PingResult(self.name, "stream", 1000, 1000 - lost)
 
 
 class FakeSnapshot(Snapshot):
@@ -435,7 +438,10 @@ class FakeFactory(CapabilityFactory):
         return b
 
     def shell(self, spec: DeviceSpec) -> Shell | None:
-        return FakeShell(spec.name, self.world) if spec.role == "host" else None
+        if spec.role != "host":
+            return None
+        self.parts[f"shell_{spec.name}"] = FakeShell(spec.name, self.world)
+        return self.parts[f"shell_{spec.name}"]
 
     def snapshot(self, spec: DeviceSpec, built: dict[type, object]) -> Snapshot:
         snap = FakeSnapshot(

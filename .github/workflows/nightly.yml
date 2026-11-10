@@ -1,0 +1,64 @@
+name: nightly
+
+# The resilience SLAs as a gate (ADR-0004): the lab suite in strict SLA mode, the failover
+# repeated 5 times and its median held to the SLA. PR runs keep recording SLAs only
+# (NETCHECK_SLA_MODE=record); this job is where a slow regression fails. The measurement
+# history lives in the Actions cache, and the job summary compares tonight with earlier runs.
+# Scheduled runs use the default branch.
+
+on:
+  schedule:
+    - cron: "17 1 * * *"   # 01:17 UTC every day
+  workflow_dispatch:
+
+jobs:
+  sla:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      NETCHECK_SLA_MODE: strict
+      NETCHECK_REPEATS: "5"
+      NETCHECK_TIME_FACTOR: "2"            # timeouts only; SLAs are not scaled
+      NETCHECK_HISTORY: history/measurements.jsonl
+    steps:
+      - uses: actions/checkout@v4
+      # GitHub's downloads sometimes answer 504 for a few minutes: try uv twice
+      - uses: astral-sh/setup-uv@v5
+        id: uv
+        continue-on-error: true
+      - if: steps.uv.outcome == 'failure'
+        run: sleep 60
+      - if: steps.uv.outcome == 'failure'
+        uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: make install-clab
+      - name: Restore the measurement history
+        uses: actions/cache/restore@v4
+        with:
+          path: history
+          key: measurements-${{ github.run_id }}
+          restore-keys: measurements-
+      - id: up
+        run: make lab-up
+      - run: make test-lab
+      - name: Measurements in the job summary
+        if: always() && steps.up.outcome == 'success'
+        run: uv run python -m netcheck summary >> "$GITHUB_STEP_SUMMARY"
+      - name: Save the measurement history
+        if: always() && steps.up.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: history
+          key: measurements-${{ github.run_id }}
+      - name: Upload reports, measurements and history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: netcheck-nightly
+          path: |
+            artifacts/
+            history/
+      - if: always() && steps.up.outcome != 'skipped'
+        run: make lab-down

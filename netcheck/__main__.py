@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -38,6 +39,10 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument(
         "names", nargs="*", metavar="FAULT", help=f"default: all ({', '.join(sorted(FAULTS))})"
     )
+    s = sub.add_parser(
+        "summary", help="this run's measurements next to earlier runs, as Markdown (for CI)"
+    )
+    s.add_argument("--artifacts", default=str(ROOT / "artifacts"))
     sub.add_parser(
         "record-fixtures",
         help="record the lab's real device output as unit-test samples (local backend, lab up)",
@@ -80,6 +85,18 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
         print(f"restored {backend.reset(args.snapshot_id)}")
     elif args.cmd == "fault":
         print(f"fault injected: {backend.inject_fault(args.name)}")
+    elif args.cmd == "summary":
+        import json
+
+        from netcheck import measurements
+
+        run = Path(args.artifacts) / measurements.RUN_FILE
+        if not run.is_file():
+            print(f"no measurements in {run}: no lab session measured anything")
+            return 0
+        history = ROOT / os.environ.get("NETCHECK_HISTORY", str(measurements.HISTORY_DEFAULT))
+        current = json.loads(run.read_text())
+        print(measurements.summary(current, measurements.load_history(history)), end="")
     elif args.cmd == "record-fixtures":
         if backend.name != "local":
             print("error: record-fixtures records the local backend; for NVIDIA use record_samples")
@@ -105,12 +122,15 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
 
         pytest_cmd = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q"]
         pytest_cmd += ["--backend", backend.name, "--intent", args.intent]
+        artifacts = ROOT / "artifacts" / "fault-check"
+        # faulted sessions measure a broken lab: keep them out of the measurement history
+        env = {**os.environ, "NETCHECK_HISTORY": str(artifacts / "history.jsonl")}
         ok = check_faults(
             backend,
             pytest_cmd,
-            ROOT / "artifacts" / "fault-check",
+            artifacts,
             args.names,
-            run=lambda cmd: subprocess.run(cmd, cwd=ROOT, check=False).returncode,
+            run=lambda cmd: subprocess.run(cmd, cwd=ROOT, env=env, check=False).returncode,
         )
         return 0 if ok else 1
     return 0

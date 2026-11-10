@@ -137,6 +137,8 @@ def test_host_routes_and_pings_read_as_the_intent(name: str) -> None:
     for peer in peers(name, EXPECTED.reachable_pairs()):
         r = ping(shell, INTENT.host_ip(peer))
         assert r.ran and r.received == r.sent, f"{name} -> {peer}: {r}"
+        # the outage measurement reads the elapsed time from this line of real output
+        assert r.interval_s is not None and 0.15 < r.interval_s < 0.5, f"{name}: {r.raw}"
     for peer in peers(name, EXPECTED.isolated_pairs()):
         r = ping(shell, INTENT.host_ip(peer))
         if gateway:  # a route exists: the probe goes out and nothing answers

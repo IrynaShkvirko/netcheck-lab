@@ -234,7 +234,6 @@ def assert_ospf_neighbor_full(r1: Device, r2: Device, port: str | None = None) -
                     report, f"{r1.name}:{ep.port} link{label}", partial(_link_line, r1, ep.port)
                 )
         fail(report)
-    lab.timing.record("ospf_neighbor_full", elapsed)
     return elapsed
 
 
@@ -247,7 +246,7 @@ def assert_route_present(router: Device, prefix: str) -> Route:
         return router.ospf.routes().get(prefix)
 
     try:
-        route, elapsed = lab.timing.wait_until(
+        route, _ = lab.timing.wait_until(
             "route_installed", lookup, lambda r: r is not None and r.installed
         )
     except WaitTimeout as exc:
@@ -260,7 +259,6 @@ def assert_route_present(router: Device, prefix: str) -> Route:
         diagnosis = diagnose_missing_route(lab, _RouterLook(report, router), prefix)
         report.add_evidence("diagnosis", [diagnosis])
         fail(report)
-    lab.timing.record("route_installed", elapsed)
     assert route is not None
     return route
 
@@ -381,16 +379,13 @@ def assert_ospf_routes_match_intent(expected: Mapping[str, Collection[str]] | No
         return missing, extra
 
     try:
-        _, elapsed = lab.timing.wait_until(
-            "route_installed", drift, lambda d: not d[0] and not d[1]
-        )
+        lab.timing.wait_until("route_installed", drift, lambda d: not d[0] and not d[1])
     except WaitTimeout as exc:
         missing, extra = exc.last if isinstance(exc.last, tuple) else ({}, {})
         report = _routes_drift_report(lab, missing, extra)
         if exc.error is not None:
             report.add_evidence("last read failed", [str(exc.error)])
         fail(report)
-    lab.timing.record("route_installed", elapsed)
 
 
 def _routes_drift_report(

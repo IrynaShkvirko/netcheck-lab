@@ -50,6 +50,9 @@ jobs:
       # every demo fault must turn the tests it declares red, and the reset must turn them
       # green again (netcheck/faults.py, netcheck/faultcheck.py); reports in artifacts/fault-check
       - run: make fault-check
+      - name: Measurements in the job summary
+        if: always() && steps.up.outcome == 'success'
+        run: uv run python -m netcheck summary >> "$GITHUB_STEP_SUMMARY"
       - name: Upload reports, device logs and captures
         if: always()
         uses: actions/upload-artifact@v4

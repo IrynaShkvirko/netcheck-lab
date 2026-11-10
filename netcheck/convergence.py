@@ -1,7 +1,9 @@
 """Convergence measurement (ADR-0004).
 
 Data plane: loss-derived, as in RFC 6413. A ping stream runs every `interval`
-seconds through the failure; outage = lost packets x interval.
+seconds through the failure; outage = lost packets x the interval the stream really
+achieved (ping's elapsed time / gaps), which on a busy machine is longer than asked for.
+The achieved interval is also the measurement's resolution, and is recorded.
 Control plane: time until the route points at the expected next hop.
 """
 
@@ -26,10 +28,17 @@ class Convergence:
     data_plane_s: float
     control_plane_s: float
     stream: PingResult
+    interval_s: float  # what one lost probe stood for: the resolution of data_plane_s
+
+
+def stream_interval(stream: PingResult, asked: float) -> float:
+    """The achieved interval when ping reported its elapsed time, else the one asked for."""
+    return stream.interval_s or asked
 
 
 def outage_seconds(stream: PingResult, interval: float) -> float:
-    return round(stream.loss * interval, 3)
+    """Lost probes x the achieved interval (`interval` when ping reported no time)."""
+    return round(stream.loss * stream_interval(stream, interval), 3)
 
 
 def measure_reconvergence(
@@ -94,7 +103,11 @@ def measure_reconvergence(
             )
         )
     lab.timing.observe(f"{check}_control_plane", cp)
-    return Convergence(check, outage_seconds(stream, interval), round(cp, 3), stream)
+    achieved = stream_interval(stream, interval)
+    lab.timing.observe(f"{check}_stream_interval", achieved)
+    return Convergence(
+        check, outage_seconds(stream, interval), round(cp, 3), stream, round(achieved, 4)
+    )
 
 
 def _stop_quietly(src: Device, token: str) -> None:

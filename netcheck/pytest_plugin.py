@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from netcheck import provenance
+from netcheck import measurements, provenance
 from netcheck.backends import get_backend
 from netcheck.backends.base import SnapshotMismatch
 from netcheck.device import CapabilityMissing
@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # the test's run, for the report hooks (set by _isolate on lab tests only)
 RUN_KEY = pytest.StashKey[TestRun]()
 MEASURED_KEY = pytest.StashKey[list[tuple[str, Measurement]]]()
+# what the session's lab was (backend, intent, ...); set only by this plugin's own `lab`
+SESSION_KEY = pytest.StashKey[dict[str, Any]]()
 
 # Exit code when the lab can no longer be trusted (restore failed); later results would mislead.
 EXIT_LAB_UNTRUSTED = 3
@@ -104,6 +106,14 @@ def lab(request: pytest.FixtureRequest) -> Generator[Lab, None, None]:
         timing=timing,
         artifacts_dir=Path(cfg.getoption("--artifacts")),
     )
+    cfg.stash[SESSION_KEY] = {
+        "backend": backend.name,
+        "intent": intent.name,
+        "intent_digest": intent.digest,
+        "sla_mode": timing.sla_mode,
+        "repeats": timing.repeats,
+        "artifacts": the_lab.artifacts_dir,
+    }
     token = set_current(the_lab)
     yield the_lab
     token.var.reset(token)
@@ -186,6 +196,19 @@ def pytest_runtest_makereport(
         # "Captured stdout" sections go to JUnit <system-out> (failed tests only, see pyproject)
         rep.sections.append(("Captured stdout netcheck device log", log_text + "\n"))
     return rep
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """Keep this session's measurements: artifacts/measurements.json and one line in the
+    history file (NETCHECK_HISTORY, default .netcheck/measurements.jsonl)."""
+    context = session.config.stash.get(SESSION_KEY, None)
+    measured = session.config.stash.get(MEASURED_KEY, [])
+    if context is None or not measured:
+        return
+    context = dict(context)
+    artifacts = Path(context.pop("artifacts"))
+    history = ROOT / os.environ.get("NETCHECK_HISTORY", str(measurements.HISTORY_DEFAULT))
+    measurements.save(measurements.run_record(measured, context), artifacts, history)
 
 
 def pytest_terminal_summary(terminalreporter: Any) -> None:
