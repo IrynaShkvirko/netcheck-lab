@@ -24,7 +24,11 @@ def pytest_report_header(config: pytest.Config) -> list[str]:
     line = f"netcheck samples: {status.line('NVUE')}"
     if not status.verified:
         line += ": the NVIDIA parsers are unverified"
-    return [line]
+    lines = [line]
+    if (FIXTURES / "local" / provenance.FILE).is_file():
+        local = provenance.status(FIXTURES / "local")
+        lines.append(f"netcheck samples: {local.line('local FRR/iproute2')} (make record-fixtures)")
+    return lines
 
 
 def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
