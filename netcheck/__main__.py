@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -30,7 +31,15 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("snapshot_id", nargs="?")
     f = sub.add_parser("fault", help="inject a fault")
     f.add_argument("name", choices=sorted(FAULTS))
+    c = sub.add_parser(
+        "fault-check", help="inject each fault, prove the lab tests catch it, reset (lab up)"
+    )
+    c.add_argument(
+        "names", nargs="*", metavar="FAULT", help=f"default: all ({', '.join(sorted(FAULTS))})"
+    )
     args = p.parse_args(argv)
+    if args.cmd == "fault-check" and (unknown := sorted(set(args.names) - set(FAULTS))):
+        p.error(f"unknown fault(s): {', '.join(unknown)}; choose from {', '.join(sorted(FAULTS))}")
 
     backend = get_backend(args.backend, load_intent(args.intent), ROOT)
     try:
@@ -66,6 +75,19 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
         print(f"restored {backend.reset(args.snapshot_id)}")
     elif args.cmd == "fault":
         print(f"fault injected: {backend.inject_fault(args.name)}")
+    elif args.cmd == "fault-check":
+        from netcheck.faultcheck import check_faults
+
+        pytest_cmd = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q"]
+        pytest_cmd += ["--backend", backend.name, "--intent", args.intent]
+        ok = check_faults(
+            backend,
+            pytest_cmd,
+            ROOT / "artifacts" / "fault-check",
+            args.names,
+            run=lambda cmd: subprocess.run(cmd, cwd=ROOT, check=False).returncode,
+        )
+        return 0 if ok else 1
     return 0
 
 

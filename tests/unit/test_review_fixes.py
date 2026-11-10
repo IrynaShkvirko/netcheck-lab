@@ -375,6 +375,7 @@ import pytest
 from netcheck.intent import load_intent
 from netcheck.lab import set_current
 from netcheck.capabilities import PortVlans
+from netcheck.faults import FAULTS
 from tests.unit.fakes import build_fake_lab, make_healthy
 
 @pytest.fixture(scope="session")
@@ -386,6 +387,8 @@ def lab(tmp_path_factory):
         switch, _, port = where.rpartition(":")
         bridge = parts["bridge_" + switch] if switch else parts["bridge"]
         bridge.ports[port] = PortVlans("access", (vlan,))
+    for name in {faults!r}:  # faults from netcheck.faults, as `netcheck fault` injects them
+        FAULTS[name].apply(the_lab.backend)
     token = set_current(the_lab)
     yield the_lab
     token.var.reset(token)
@@ -398,6 +401,7 @@ def _run_lab_suite(  # type: ignore[no-untyped-def]
     *args: str,
     bad_ports: dict[str, int] | None = None,
     intent: str = "intent/lab.yaml",
+    faults: tuple[str, ...] = (),
 ):
     """Run the real tests/lab files on a healthy fake lab built from `intent` (a path
     relative to the repo)."""
@@ -409,7 +413,7 @@ def _run_lab_suite(  # type: ignore[no-untyped-def]
     if bad_ports is None:
         bad_ports = {"p3": 10} if wrong_vlan else {}
     conftest = (lab_dir / "conftest.py").read_text() + _LAB_CONFTEST.format(
-        repo=str(repo), intent=intent_path, bad_ports=bad_ports
+        repo=str(repo), intent=intent_path, bad_ports=bad_ports, faults=list(faults)
     )
     pytester.makeconftest(conftest)
     for f in lab_dir.glob("test_*.py"):
