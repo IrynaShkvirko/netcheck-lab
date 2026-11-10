@@ -1,13 +1,16 @@
 # Thresholds per check (ADR-0004). Values are seconds.
 # Expressions may reference intent timers: hello_interval, dead_interval.
 # NETCHECK_TIME_FACTOR scales timeouts only. NETCHECK_SLA_MODE: strict | record.
+# NETCHECK_REPEATS=N runs each resilience measurement N times and holds the median to its SLA.
+# Waits with no sla (ospf_neighbor_full, route_installed) only bound polling: how long a poll
+# takes on a converged lab measures nothing, so it is neither gated nor recorded.
 
 profiles:
   local:
     device_ready:              {timeout: 60,  poll: 2}
     interface_up:              {sla: 5,  timeout: 30, poll: 1}
-    ospf_neighbor_full:        {sla: 10, timeout: 30, poll: 1}
-    route_installed:           {sla: 5,  timeout: 15, poll: 0.5}
+    ospf_neighbor_full:        {timeout: 30, poll: 1}
+    route_installed:           {timeout: 15, poll: 0.5}
     reachability:              {timeout: 15, poll: 0.5}
     vlan_change_applied:       {sla: 5,  timeout: 15, poll: 1}
     reconverge_local_link:     {sla: 2,  timeout: 10, poll: 0.2, stream_interval: 0.01}
@@ -19,8 +22,8 @@ profiles:
     # Placeholder until Air boot and API latency are measured (ADR-0004 open question).
     device_ready:              {timeout: 300, poll: 5}
     interface_up:              {sla: 5,  timeout: 45, poll: 2}
-    ospf_neighbor_full:        {sla: 10, timeout: 45, poll: 2}
-    route_installed:           {sla: 5,  timeout: 30, poll: 1}
+    ospf_neighbor_full:        {timeout: 45, poll: 2}
+    route_installed:           {timeout: 30, poll: 1}
     reachability:              {timeout: 30, poll: 1}
     vlan_change_applied:       {sla: 5,  timeout: 30, poll: 1}
     reconverge_local_link:     {sla: 2,  timeout: 15, poll: 0.5, stream_interval: 0.01}
