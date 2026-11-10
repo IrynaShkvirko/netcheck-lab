@@ -23,6 +23,8 @@ It runs on two backends behind one interface:
 ```
 
 Source: [`intent/lab.yaml`](intent/lab.yaml). Ports are logical (`p1`); the local backend maps them to `eth1`, Cumulus to `swp1`.
+Every link between two routers sets `ospf_cost`: the costs decide the path, and the route
+tests check that each router uses the cheapest one (every one of them when costs tie).
 
 ## What the tests prove
 
@@ -137,10 +139,10 @@ Each lab test is written as named steps, and `make test-lab-live` prints them as
 
 ```
 tests/lab/test_ospf.py::test_ospf_route_is_learned[r1-10.0.30.0/24]
-  step 1: Find which router advertises 10.0.30.0/24 in the intent
-  step 2: Check r1 has a Full OSPF adjacency with r2
+  step 1: Work out from the intent's OSPF costs which way r1 reaches 10.0.30.0/24
+  step 2: Check r1 has a Full OSPF adjacency with r2 via p2
   step 3: Wait until 10.0.30.0/24 is installed in r1's routing table
-  step 4: Check the route goes through r2 (10.0.12.1, 10.0.12.3)
+  step 4: Wait until the route goes via r2 (10.0.12.1), the cheapest path
 PASSED
 ```
 
@@ -392,9 +394,9 @@ would pass every drift test. Two unit test files break that loop, for every inte
 
 `tests/unit/intents/two-site.yaml` is a second shape (three routers, two switches, a VLAN
 spanning both, other timers) that is rendered and checked but never deployed. The real
-`tests/lab` files also run on a healthy fake lab built from it; the lab tests that still
-assume campus-mini's shape are listed in `TWO_SITE_ASSUMES_CAMPUS_MINI`
-(`tests/unit/test_review_fixes.py`), a list that may only shrink.
+`tests/lab` files also run on a healthy fake lab built from it, and all pass. A lab test
+that only works on campus-mini's shape would fail there; `TWO_SITE_ASSUMES_CAMPUS_MINI`
+(`tests/unit/test_review_fixes.py`) records any such test with the reason, and is empty.
 
 After an intended change to rendering, an intent or an image:
 

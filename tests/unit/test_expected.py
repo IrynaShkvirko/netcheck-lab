@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 
 from netcheck.capabilities import OspfInterface, PortVlans
-from netcheck.expected import Adjacency, Attachment, Expected
+from netcheck.expected import Adjacency, Attachment, Expected, NextHop
+from netcheck.intent import load_intent
+
+from .intents import ROOT
 
 
 @pytest.fixture
@@ -27,10 +30,32 @@ def test_each_router_learns_the_other_routers_lans(expected: Expected) -> None:
     assert expected.routes_by_router() == {"r1": {"10.0.30.0/24"}, "r2": {"10.0.10.0/24"}}
 
 
-def test_originator_and_allowed_next_hops(expected: Expected) -> None:
+def test_originator_and_cheapest_next_hops(expected: Expected) -> None:
     assert expected.originator("10.0.30.0/24") == "r2"
     assert expected.originator("10.0.10.0/24", exclude="r1") == "?"
-    assert expected.next_hops("r1", "r2") == {"10.0.12.1", "10.0.12.3"}
+    # primary (cost 10) beats backup (cost 100) in both directions
+    assert expected.ospf_next_hops("r1", "10.0.30.0/24") == [NextHop("r2", "p2", "10.0.12.1")]
+    assert expected.ospf_next_hops("r2", "10.0.10.0/24") == [NextHop("r1", "p1", "10.0.12.0")]
+    assert expected.ospf_next_hops("r1", "10.0.10.0/24") == []  # its own VLAN gateway
+    assert expected.ospf_next_hops("r1", "192.0.2.0/24") == []  # nobody originates it
+
+
+def test_cheapest_path_can_go_through_a_third_router() -> None:
+    """two-site: r1 and r3 share a direct link (cost 50), but the path via r2 costs 20."""
+    two_site = Expected(load_intent(ROOT / "tests/unit/intents/two-site.yaml"))
+    assert two_site.ospf_next_hops("r1", "10.0.30.0/24") == [NextHop("r2", "p2", "10.0.12.1")]
+    assert two_site.ospf_next_hops("r3", "10.0.10.0/24") == [NextHop("r2", "p2", "10.0.23.0")]
+    # a link network has two originators: the cheaper side wins (r2 via r3 is 20, via r1 60)
+    assert two_site.ospf_next_hops("r3", "10.0.12.0/31") == [NextHop("r2", "p2", "10.0.23.0")]
+
+
+def test_equal_cost_paths_are_all_next_hops() -> None:
+    """two-site: r2 reaches the r1-r3 link network via r1 or via r3, both cost 60."""
+    two_site = Expected(load_intent(ROOT / "tests/unit/intents/two-site.yaml"))
+    assert two_site.ospf_next_hops("r2", "10.0.13.0/31") == [
+        NextHop("r1", "p1", "10.0.12.0"),
+        NextHop("r3", "p2", "10.0.23.1"),
+    ]
 
 
 def test_two_links_between_the_same_routers_are_two_adjacencies(expected: Expected) -> None:

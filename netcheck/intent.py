@@ -268,6 +268,12 @@ def validate(intent: Intent) -> None:
                 errors.append(f"trunk {lk.a.node}-{lk.b.node} carries unknown VLAN {vid}")
         if lk.ospf_cost is not None and (not isinstance(lk.ospf_cost, int) or lk.ospf_cost < 1):
             errors.append(f"{where}: ospf_cost must be a positive integer, got {lk.ospf_cost!r}")
+        roles = {intent.nodes[ep.node].role for ep in (lk.a, lk.b) if ep.node in intent.nodes}
+        if lk.routed and roles == {"router"} and lk.ospf_cost is None:
+            errors.append(
+                f"{where}: a link between two routers needs ospf_cost "
+                "(it decides the path, and the tests check the path)"
+            )
         if lk.routed:
             ifaces = [
                 _iface(ep.ip, f"{where} {ep.node} ip", errors) for ep in (lk.a, lk.b) if ep.ip

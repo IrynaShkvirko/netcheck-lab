@@ -26,9 +26,10 @@ from netcheck.assertions.ospf import (
     assert_ospf_interface_matches_intent,
     assert_ospf_neighbor_full,
     assert_ospf_routes_match_intent,
+    assert_route_next_hops,
     assert_route_present,
     assert_route_uses,
-    check_next_hop,
+    describe_next_hops,
 )
 from netcheck.assertions.reachability import assert_reachable
 
@@ -38,14 +39,15 @@ __all__ = [
     "assert_ospf_neighbor_full",
     "assert_ospf_routes_match_intent",
     "assert_reachable",
+    "assert_route_next_hops",
     "assert_route_present",
     "assert_route_uses",
     "assert_vlan_membership",
-    "check_next_hop",
     "check_no_extra_ports",
     "check_no_replies",
     "check_port_vlans",
     "check_vlan_membership",
+    "describe_next_hops",
     "describe_vlans",
     "force_layer2_path",
     "isolation_probe_count",

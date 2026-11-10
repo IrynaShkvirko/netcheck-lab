@@ -8,7 +8,7 @@ import pytest
 
 from netcheck.assertions import assert_isolated, assert_route_uses
 from netcheck.backends.local import LinuxShell
-from netcheck.capabilities import PingResult, PortVlans, Route
+from netcheck.capabilities import OspfNeighbor, PingResult, PortVlans, Route
 from netcheck.devicelog import DeviceLog
 from netcheck.ports import PortMap
 from netcheck.report import IntentViolation
@@ -285,6 +285,7 @@ links:
   - {a: {node: h2, port: eth1}, b: {node: r1, port: p1, ip: 10.0.10.1/24}}
   - {a: {node: r1, port: p2, ip: 10.0.12.0/31}, b: {node: r2, port: p1, ip: 10.0.12.1/31},
      ospf_cost: 0}
+  - {a: {node: r1, port: p3, ip: 10.0.12.2/31}, b: {node: r2, port: p2, ip: 10.0.12.3/31}}
 expect:
   reachable: [[h2, h2]]
 """
@@ -302,6 +303,7 @@ expect:
         "port 'eth1' must look like p1",
         "ospf_cost must be a positive integer",
         "names the same host twice",
+        "r1:p3-r2:p2: a link between two routers needs ospf_cost",
     ):
         assert expected in msg, expected
 
@@ -424,17 +426,11 @@ def test_lab_suite_passes_on_a_healthy_fake_lab(pytester) -> None:  # type: igno
 
 
 # Lab tests that fail on a healthy two-site lab because they assume campus-mini's shape.
-# Each one is a bug in a lab test, not in the network: when it is fixed, remove it here.
-# test_ospf_route_is_learned wants the next hop on a link to the router that originates
-# the prefix, but OSPF takes the cheapest path: r1 reaches r3's VLAN 30 via r2 (cost 20)
-# rather than over the direct backup link (cost 50); 10.0.12.0/31 has two originators and
-# the test picks r1 although r3's shortest path is via r2.
+# Each one is a bug in a lab test, not in the network. Empty since test_ospf_route_is_learned
+# checks the cheapest path (Expected.ospf_next_hops) instead of a direct link to the router
+# that originates the prefix; add a test here only with the reason, and fix it soon.
 TWO_SITE = "tests/unit/intents/two-site.yaml"
-TWO_SITE_ASSUMES_CAMPUS_MINI = {
-    "test_ospf_route_is_learned[r1-10.0.30.0/24]",
-    "test_ospf_route_is_learned[r3-10.0.10.0/24]",
-    "test_ospf_route_is_learned[r3-10.0.12.0/31]",
-}
+TWO_SITE_ASSUMES_CAMPUS_MINI: set[str] = set()
 
 
 def _failed_tests(result) -> set[str]:  # type: ignore[no-untyped-def]
@@ -505,13 +501,42 @@ def test_step_records_outcome_and_order(fake) -> None:  # type: ignore[no-untype
     ]
 
 
-def test_check_next_hop_rejects_a_route_through_the_wrong_router(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.assertions import check_next_hop
+def test_route_over_the_backup_is_not_the_cheapest_path(fake) -> None:  # type: ignore[no-untyped-def]
+    """r1 still reaches r2's LAN, but over the backup link (cost 100) instead of the
+    primary (cost 10): the route check fails and shows the cost drift that explains it."""
+    from netcheck.assertions import assert_route_next_hops
+    from tests.unit.fakes import make_healthy
 
-    lab, _ = fake
-    route = Route("10.0.30.0/24", "ospf", ("10.0.99.9",), True)
-    with pytest.raises(IntentViolation, match="r1 must reach 10.0.30.0/24 through r2"):
-        check_next_hop(lab["r1"], route, "r2", {"10.0.12.1", "10.0.12.3"})
+    lab, parts = fake
+    make_healthy(lab, parts)
+    r1 = parts["ospf_r1"]
+    r1.interfaces["p2"] = replace(r1.interfaces["p2"], cost=500)  # someone changed the cost
+    r1.network = None
+    r1.nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2"), OspfNeighbor("2.2.2.2", "Full", "p3")]
+    r1.rib = {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", ("10.0.12.3",), True)}
+    hops = lab.expected.ospf_next_hops("r1", "10.0.30.0/24")
+    with pytest.raises(IntentViolation) as exc:
+        assert_route_next_hops(lab["r1"], "10.0.30.0/24", hops)
+    report = exc.value.report
+    assert report.verdict == (
+        "r1 must reach 10.0.30.0/24 via r2 (10.0.12.1), the cheapest path in the intent"
+    )
+    assert report.actual == "next hops ['10.0.12.3']"
+    assert [(d.where, d.expected, d.actual) for d in report.drift] == [
+        ("r1:p2 (primary) cost", "10", "500")
+    ]
+
+
+def test_an_extra_equal_cost_path_is_not_the_intended_route(fake) -> None:  # type: ignore[no-untyped-def]
+    """Exactly the cheapest paths: a route that also uses the backup fails too."""
+    from netcheck.assertions import assert_route_next_hops
+
+    lab, parts = fake
+    both = ("10.0.12.1", "10.0.12.3")
+    parts["ospf_r1"].rib = {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", both, True)}
+    hops = lab.expected.ospf_next_hops("r1", "10.0.30.0/24")
+    with pytest.raises(IntentViolation, match=r"next hops \['10.0.12.1', '10.0.12.3'\]"):
+        assert_route_next_hops(lab["r1"], "10.0.30.0/24", hops)
 
 
 def test_interface_settings_mismatch_is_reported_per_port(fake) -> None:  # type: ignore[no-untyped-def]
