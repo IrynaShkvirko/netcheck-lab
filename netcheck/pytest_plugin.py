@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from netcheck import provenance
 from netcheck.backends import get_backend
 from netcheck.backends.base import SnapshotMismatch
 from netcheck.device import CapabilityMissing
@@ -49,13 +50,25 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_report_header(config: pytest.Config) -> list[str]:
-    """Show injected faults at the top of every run, so nobody misreads their results."""
+    """Show injected faults at the top of every run, so nobody misreads their results, and
+    on the NVIDIA backend whether its parsers were ever checked against a real switch."""
+    lines = []
+    if config.getoption("--backend", default="local") == "nvidia":
+        samples = ROOT / "tests" / "unit" / "fixtures" / "nvue"
+        if samples.is_dir():
+            status = provenance.status(samples)
+            if not status.verified:
+                lines.append(
+                    f"netcheck: NVIDIA parsers checked against {status.line('NVUE')}; the rest "
+                    "come from documentation, so this backend's results are unverified"
+                )
     faults = LabState(ROOT).active_faults()
-    if not faults:
-        return []
-    return [
-        "netcheck: FAULTS ARE APPLIED to the lab (expected failures; `make lab-reset` clears):"
-    ] + [f"  {f}" for f in faults]
+    if faults:
+        lines.append(
+            "netcheck: FAULTS ARE APPLIED to the lab (expected failures; `make lab-reset` clears):"
+        )
+        lines += [f"  {f}" for f in faults]
+    return lines
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

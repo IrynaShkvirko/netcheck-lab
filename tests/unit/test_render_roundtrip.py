@@ -146,12 +146,12 @@ def test_switch_commands_give_each_port_exactly_its_intended_vlans(intent: Inten
 # ---- hosts ----------------------------------------------------------------------------
 
 
-def test_host_commands_give_each_host_its_intended_address_and_gateway(intent: Intent) -> None:
+def test_host_commands_give_each_host_its_intended_address_and_routes(intent: Intent) -> None:
     for host in _nodes(intent, "host"):
         node = intent.nodes[host]
         (link,) = intent.links_of(host)
         ifname = PortMap.for_node(intent, host, "eth").real(link.endpoint(host).port)
-        addresses, up, gateway = [], False, None
+        addresses, up, gateway, mgmt_default_removed = [], False, None, False
         for cmd in host_exec(intent, host):
             w = shlex.split(cmd)
             if w[:3] == ["ip", "addr", "add"]:
@@ -162,8 +162,13 @@ def test_host_commands_give_each_host_its_intended_address_and_gateway(intent: I
             elif w[:4] == ["ip", "route", "replace", "default"]:
                 assert w[4] == "via" and w[6:] == ["dev", ifname], cmd
                 gateway = w[5]
+            elif w == ["ip", "route", "del", "default", "dev", "eth0"]:
+                mgmt_default_removed = True
             else:
                 raise AssertionError(f"{host}: unexpected command {cmd!r}")
         assert addresses == [ipaddress.ip_interface(node.ip or "")], host
         assert up, f"{host}: {ifname} never set up"
         assert gateway == node.gateway, host
+        # Docker gives every container a default route via the management network: a host
+        # with a gateway replaces it, a host without one must lose it (no route off-subnet)
+        assert mgmt_default_removed == (node.gateway is None), host

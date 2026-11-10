@@ -1,0 +1,37 @@
+{
+  "device": "h3",
+  "role": "host",
+  "intent": "campus-mini",
+  "calls": [
+    {
+      "cmd": "ip -j link show",
+      "rc": 0,
+      "stdout": "[{\"ifindex\":1,\"ifname\":\"lo\",\"flags\":[\"LOOPBACK\",\"UP\",\"LOWER_UP\"],\"mtu\":65536,\"qdisc\":\"noqueue\",\"operstate\":\"UNKNOWN\",\"linkmode\":\"DEFAULT\",\"group\":\"default\",\"txqlen\":1000,\"link_type\":\"loopback\",\"address\":\"00:00:00:00:00:00\",\"broadcast\":\"00:00:00:00:00:00\"},{\"ifindex\":834,\"link_index\":835,\"ifname\":\"eth0\",\"flags\":[\"BROADCAST\",\"MULTICAST\",\"UP\",\"LOWER_UP\"],\"mtu\":1500,\"qdisc\":\"noqueue\",\"operstate\":\"UP\",\"linkmode\":\"DEFAULT\",\"group\":\"default\",\"link_type\":\"ether\",\"address\":\"02:42:ac:14:14:06\",\"broadcast\":\"ff:ff:ff:ff:ff:ff\",\"link_netnsid\":0},{\"ifindex\":847,\"link_index\":846,\"ifname\":\"eth1\",\"flags\":[\"BROADCAST\",\"MULTICAST\",\"UP\",\"LOWER_UP\"],\"mtu\":9500,\"qdisc\":\"noqueue\",\"operstate\":\"UP\",\"linkmode\":\"DEFAULT\",\"group\":\"default\",\"link_type\":\"ether\",\"address\":\"aa:c1:ab:b5:38:e8\",\"broadcast\":\"ff:ff:ff:ff:ff:ff\",\"link_netnsid\":1,\"altnames\":[\"clab-o-b0c69f8616da9184\"]}]\n",
+      "stderr": ""
+    },
+    {
+      "cmd": "ip -j route show",
+      "rc": 0,
+      "stdout": "[{\"dst\":\"10.0.20.0/24\",\"dev\":\"eth1\",\"protocol\":\"kernel\",\"scope\":\"link\",\"prefsrc\":\"10.0.20.13\",\"flags\":[]},{\"dst\":\"172.20.20.0/24\",\"dev\":\"eth0\",\"protocol\":\"kernel\",\"scope\":\"link\",\"prefsrc\":\"172.20.20.6\",\"flags\":[]}]\n",
+      "stderr": ""
+    },
+    {
+      "cmd": "ping -n -c 3 -i 0.2 -W 1 -w 3 10.0.10.11",
+      "rc": 2,
+      "stdout": "",
+      "stderr": "ping: connect: Network unreachable\n"
+    },
+    {
+      "cmd": "ping -n -c 3 -i 0.2 -W 1 -w 3 10.0.10.12",
+      "rc": 2,
+      "stdout": "",
+      "stderr": "ping: connect: Network unreachable\n"
+    },
+    {
+      "cmd": "ip -j neigh show",
+      "rc": 0,
+      "stdout": "[]\n",
+      "stderr": ""
+    }
+  ]
+}

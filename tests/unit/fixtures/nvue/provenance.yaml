@@ -1,0 +1,53 @@
+note: 'How each sample here was made. captured: recorded from a running device. documentation:
+  written by hand from the NOS documentation; a parser tested only on these is unverified.'
+samples:
+  r1/interfaces.applied.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  r1/interfaces.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  r1/ospf_neighbors.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  r1/routes.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  r2/interfaces.applied.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  r2/interfaces.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  r2/ospf_neighbors.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  r2/routes.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  sw1/bridge_domain.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'
+  sw1/interfaces.operational.json:
+    source: documentation
+    nos: Cumulus Linux NVUE REST API, from the NVUE command reference (route tree
+      as before 5.11)
+    date: '2026-11-07'

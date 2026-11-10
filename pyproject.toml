@@ -33,6 +33,7 @@ markers = [
     "functional: VLAN, reachability and OSPF behaviour",
     "resilience: failures and convergence",
     "drift: live state vs intent",
+    "documentation_samples: runs on device samples written from documentation, not captured (unverified)",
 ]
 junit_family = "xunit1"              # keeps <properties> for measurements
 junit_logging = "system-out"         # device command log

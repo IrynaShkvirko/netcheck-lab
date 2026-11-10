@@ -41,6 +41,10 @@ Signals that a task is PARTIAL:
 - new behaviour without a unit test named for it
 - a test marked skip/xfail that the task should have made pass
 - config values still marked "placeholder" (e.g. `timing.yaml` nvidia profile)
+- a parser or adapter whose unit tests run only on samples listed as `documentation` in a
+  fixture folder's `provenance.yaml`: mark it **UNVERIFIED (needs device)**, whatever its
+  tests say. The author, the samples and the tests share one reading of the docs; only a
+  captured sample (`record_samples`, `make record-fixtures`) is evidence about a device
 
 ## Output
 

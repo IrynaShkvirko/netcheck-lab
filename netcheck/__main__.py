@@ -6,6 +6,7 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 from netcheck.backends import Backend, get_backend
 from netcheck.backends.base import LabDegraded, RestoreFailed, SnapshotMismatch
@@ -36,6 +37,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     c.add_argument(
         "names", nargs="*", metavar="FAULT", help=f"default: all ({', '.join(sorted(FAULTS))})"
+    )
+    sub.add_parser(
+        "record-fixtures",
+        help="record the lab's real device output as unit-test samples (local backend, lab up)",
     )
     args = p.parse_args(argv)
     if args.cmd == "fault-check" and (unknown := sorted(set(args.names) - set(FAULTS))):
@@ -75,6 +80,26 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
         print(f"restored {backend.reset(args.snapshot_id)}")
     elif args.cmd == "fault":
         print(f"fault injected: {backend.inject_fault(args.name)}")
+    elif args.cmd == "record-fixtures":
+        if backend.name != "local":
+            print("error: record-fixtures records the local backend; for NVIDIA use record_samples")
+            return 1
+        from netcheck.backends.local import LocalBackend
+        from netcheck.backends.local_samples import NotConverged, record_local_samples
+
+        dest = ROOT / "tests" / "unit" / "fixtures" / "local"
+        from netcheck.timing import Timing
+
+        intent = backend.intent
+        timing = Timing.load(ROOT / "timing.yaml", backend.timing_profile, intent.timer_vars())
+        try:
+            written = record_local_samples(cast(LocalBackend, backend), dest, timing)
+        except NotConverged as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        where = dest.relative_to(ROOT)
+        print(f"recorded {len(written)} devices into {where} (provenance.yaml updated)")
+        print("review `git diff tests/unit/fixtures/local`, then run `make check`")
     elif args.cmd == "fault-check":
         from netcheck.faultcheck import check_faults
 

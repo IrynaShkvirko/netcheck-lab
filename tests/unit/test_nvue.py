@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from netcheck import provenance
 from netcheck.backends.nvidia_air import (
     NvueBridge,
     NvueLinks,
@@ -26,6 +27,10 @@ from netcheck.ports import PortMap
 from netcheck.transport.base import TransportError
 
 from .fakes_nvue import SAMPLES, FakeNvueTransport, nvue_ports
+
+# every test here reads fixtures/nvue; while any sample there is not captured from a
+# switch, these results say nothing about a real one (see fixtures/nvue/provenance.yaml)
+pytestmark = [] if provenance.status(SAMPLES).verified else [pytest.mark.documentation_samples]
 
 
 def _sample(device: str, name: str) -> Any:

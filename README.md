@@ -7,7 +7,8 @@ and explains every failure in terms of the intent that was violated.
 It runs on two backends behind one interface:
 
 - **local**: FRR routers, a Linux-bridge switch and Linux hosts in Containerlab. Runs on a laptop and in GitHub Actions.
-- **nvidia**: Cumulus Linux on NVIDIA DSX Air over the NVUE REST API. The device side is done;
+- **nvidia**: Cumulus Linux on NVIDIA DSX Air over the NVUE REST API. The device side is written
+  but unverified (tested only on samples written from documentation);
   the lab side (creating the simulation, access, snapshots) is specified and planned, not built
   yet (see Status).
 
@@ -116,6 +117,7 @@ Lab commands:
 | `make fault-wrong-vlan` | demo fault: move h3's switch port into VLAN 10 |
 | `make fault-missing-ospf` | demo fault: remove r2's LAN from OSPF |
 | `make fault-check` | inject each fault in turn and prove the tests it declares catch it, then reset (also run in CI) |
+| `make record-fixtures` | wait for OSPF to converge, then record every device's real output as unit-test samples (`tests/unit/fixtures/local/`) |
 
 ### 4. Run the tests
 
@@ -458,5 +460,6 @@ passes `make check`.
 
 - Framework core, intent rendering, assertions, reports, cleanup and timing: done, unit-tested with fake devices.
 - Local backend: verified end to end on a real lab (Containerlab 0.76, FRR 10.1, Apple Silicon via OrbStack) and in GitHub Actions (`lab` job), including the code-review fixes. Lab mutation runs found and closed two isolation gaps: link restores are now verified, and a mutation run never deploys and starts every mutant from the baseline. Next: pin the switch and host image by digest with `make pin-images`.
-- NVIDIA backend, device side: NVUE responses parsed into the same normalized types as FRR, config changes through the NVUE revision flow. Tested against NVUE JSON samples built from the NVIDIA docs (`tests/unit/fixtures/nvue/`): the smoke, OSPF and drift lab tests pass on them unchanged.
+- Local backend, parsers: tested on real device output too. `make record-fixtures` records every device of a healthy campus-mini lab through the backend's own adapters (`tests/unit/fixtures/local/`, captured from FRR 10.1 per `provenance.yaml`), and `tests/unit/test_local_contracts.py` replays it: adjacencies, routes over the cheapest path, the OSPF interfaces FRR prints back, bridge VLANs, links, host routes and pings must read as the intent. Re-record after changing an adapter's command or the images; a replay that asks for a command never recorded fails.
+- NVIDIA backend, device side: **unverified**. NVUE responses are parsed into the same normalized types as FRR, and config changes go through the NVUE revision flow, but 0 of 10 NVUE samples captured from a device: they were written from the NVIDIA docs (`tests/unit/fixtures/nvue/provenance.yaml`). The smoke, OSPF and drift lab tests pass on them unchanged, which shows the parsers agree with that reading of the docs, not with a switch. Unit runs print this count in their header and mark those tests `documentation_samples`; `record_samples(..., provenance_root=...)` on a DSX Air simulation replaces them and updates the count.
 - NVIDIA backend, lab side: not built yet. It is specified in [`docs/requirements/nvidia-backend-requirements.md`](docs/requirements/nvidia-backend-requirements.md) and planned in [`docs/plans/2026-11-08-nvidia-backend-implementation-plan.md`](docs/plans/2026-11-08-nvidia-backend-implementation-plan.md): spikes on a real DSX Air simulation, then the Air API client, topology rendering, SSH access to devices through the `oob-mgmt-server`, NVUE snapshots, live runs with captured samples and a measured timing profile.
