@@ -483,10 +483,11 @@ def test_failure_report_names_the_failed_step(pytester) -> None:  # type: ignore
             "*INTENT VIOLATED: h1 (VLAN 10) and h3 (VLAN 20) must be isolated*",
             "*Steps:*",
             "*1. Look up where h1 and h3 are attached in the intent [ok*",
-            "*2. Force h1 and h3 to talk directly over layer 2 [ok*",
-            "*3. Start a packet capture on h3 [ok*",
-            "*4. Send 5 pings from h1 to h3 [ok*",
-            "*5. Check h3 never answered (5/5 replies) [FAILED*",
+            "*2. Check h3 does not answer h1 through a router [ok*",
+            "*3. Force h1 and h3 to talk directly over layer 2 [ok*",
+            "*4. Start a packet capture on h3 [ok*",
+            "*5. Send 5 pings from h1 to h3 [ok*",
+            "*6. Check h3 never answered (5/5 replies) [FAILED*",
         ]
     )
 

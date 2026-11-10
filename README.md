@@ -31,7 +31,7 @@ tests check that each router uses the cheapest one (every one of them when costs
 | Marker | Tests | Intent |
 | --- | --- | --- |
 | `smoke` | ports up, OSPF running | the lab is usable |
-| `functional` | VLAN isolation, reachability, OSPF adjacency, learned routes | every pair and route listed in the intent |
+| `functional` | VLAN isolation (at layer 2 and through a router; silence counts only after the sender's ARP probes are seen to leave it and it reaches its own VLAN), reachability, OSPF adjacency, learned routes over the cheapest path | every pair and route listed in the intent |
 | `resilience` | primary link failure | traffic reroutes via backup; outage measured with a 10 ms ping stream (RFC 6413 method) |
 | `drift` | VLAN membership, route table | live state equals the expected state generated from the intent |
 
