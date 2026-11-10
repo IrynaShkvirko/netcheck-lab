@@ -37,13 +37,16 @@ from netcheck.transport.base import CommandResult, CommandTransport, TransportEr
 from netcheck.transport.docker_exec import DockerExecTransport
 
 _PING = re.compile(r"(\d+) packets transmitted, (\d+) (?:packets )?received")
+_PING_TIME = re.compile(r"packet loss, time (\d+)ms")  # iputils; BusyBox prints no time
 
 
 def parse_ping(src: str, dst: str, output: str) -> PingResult:
     m = _PING.search(output)
     if not m:
         return PingResult(src, dst, 0, 0, output)
-    return PingResult(src, dst, int(m.group(1)), int(m.group(2)), output)
+    t = _PING_TIME.search(output)
+    elapsed = int(t.group(1)) / 1000 if t else None
+    return PingResult(src, dst, int(m.group(1)), int(m.group(2)), output, elapsed_s=elapsed)
 
 
 def _state(raw: str) -> str:

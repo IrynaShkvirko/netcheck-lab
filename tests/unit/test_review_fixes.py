@@ -389,6 +389,9 @@ def lab(tmp_path_factory):
         bridge.ports[port] = PortVlans("access", (vlan,))
     for name in {faults!r}:  # faults from netcheck.faults, as `netcheck fault` injects them
         FAULTS[name].apply(the_lab.backend)
+    the_lab.timing.repeats = {repeats!r}  # NETCHECK_REPEATS
+    for host, lost in {lost_per_stream!r}.items():  # probes each ping stream loses, in order
+        parts["shell_" + host].lost_per_stream = list(lost)
     token = set_current(the_lab)
     yield the_lab
     token.var.reset(token)
@@ -402,6 +405,8 @@ def _run_lab_suite(  # type: ignore[no-untyped-def]
     bad_ports: dict[str, int] | None = None,
     intent: str = "intent/lab.yaml",
     faults: tuple[str, ...] = (),
+    repeats: int = 1,
+    lost_per_stream: dict[str, list[int]] | None = None,
 ):
     """Run the real tests/lab files on a healthy fake lab built from `intent` (a path
     relative to the repo)."""
@@ -413,7 +418,12 @@ def _run_lab_suite(  # type: ignore[no-untyped-def]
     if bad_ports is None:
         bad_ports = {"p3": 10} if wrong_vlan else {}
     conftest = (lab_dir / "conftest.py").read_text() + _LAB_CONFTEST.format(
-        repo=str(repo), intent=intent_path, bad_ports=bad_ports, faults=list(faults)
+        repo=str(repo),
+        intent=intent_path,
+        bad_ports=bad_ports,
+        faults=list(faults),
+        repeats=repeats,
+        lost_per_stream=lost_per_stream or {},
     )
     pytester.makeconftest(conftest)
     for f in lab_dir.glob("test_*.py"):

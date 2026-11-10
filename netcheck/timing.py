@@ -83,6 +83,7 @@ class Timing:
     thresholds: dict[str, Threshold]
     factor: float = 1.0
     sla_mode: str = "strict"  # strict | record
+    repeats: int = 1  # NETCHECK_REPEATS: runs of each resilience measurement, median gated
     measurements: list[Measurement] = field(default_factory=list)
 
     @classmethod
@@ -98,6 +99,9 @@ class Timing:
         sla_mode = env.get("NETCHECK_SLA_MODE", "strict")
         if sla_mode not in ("strict", "record"):
             raise ValueError(f"NETCHECK_SLA_MODE must be strict or record, got {sla_mode!r}")
+        repeats_text = env.get("NETCHECK_REPEATS", "1")
+        if not repeats_text.isdigit() or int(repeats_text) < 1:
+            raise ValueError(f"NETCHECK_REPEATS must be a whole number >= 1, got {repeats_text!r}")
         raw: dict[str, Any] = yaml.safe_load(path.read_text())["profiles"][profile]
         thresholds = {}
         for check, d in raw.items():
@@ -109,7 +113,13 @@ class Timing:
                 window=float(d["window"]) if "window" in d else None,
                 stream_interval=float(d["stream_interval"]) if "stream_interval" in d else None,
             )
-        return cls(profile=profile, thresholds=thresholds, factor=factor, sla_mode=sla_mode)
+        return cls(
+            profile=profile,
+            thresholds=thresholds,
+            factor=factor,
+            sla_mode=sla_mode,
+            repeats=int(repeats_text),
+        )
 
     def __getitem__(self, check: str) -> Threshold:
         return self.thresholds[check]

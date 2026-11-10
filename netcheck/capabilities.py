@@ -80,6 +80,15 @@ class PingResult:
     received: int
     raw: str = ""
     error: str = ""
+    elapsed_s: float | None = None  # from first to last probe, when ping reports it
+
+    @property
+    def interval_s(self) -> float | None:
+        """The interval the probes were really sent at (elapsed / gaps), or None. On a
+        busy machine it is longer than asked for, and each lost probe stands for more time."""
+        if self.elapsed_s is None or self.sent < 2:
+            return None
+        return self.elapsed_s / (self.sent - 1)
 
     @property
     def ran(self) -> bool:
