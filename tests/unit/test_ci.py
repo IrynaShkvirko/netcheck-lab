@@ -87,3 +87,12 @@ def test_ci_runs_once_per_pr_commit_and_on_master() -> None:
     matrix = ci["jobs"]["checks"]["strategy"]["matrix"]["python"]
     assert matrix == ["3.11", "3.12", "3.13", "3.14"]
     assert ci["jobs"]["lab"]["if"] == "needs.changes.outputs.lab == 'true'"
+
+
+def test_every_lab_image_is_pinned_by_digest() -> None:
+    """A tag such as :latest can point at another image tomorrow; a digest cannot."""
+    images = yaml.safe_load((ROOT / "backends.yaml").read_text())["local"]["images"]
+    loose = {
+        role: ref for role, ref in images.items() if not re.search(r"@sha256:[0-9a-f]{64}$", ref)
+    }
+    assert not loose, f"images not pinned by digest (make pin-images): {loose}"

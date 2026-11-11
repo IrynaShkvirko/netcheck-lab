@@ -2,11 +2,13 @@
 local:
   containerlab_version: "0.76.0"
   port_prefix: eth          # logical p1 -> eth1
+  # Pinned by digest, so every lab runs the same images: `make pin-images` prints the digest
+  # of each image after pulling it; paste it here, then `make golden`. Tags at pinning time
+  # (2026-11-11): frr 10.1.0, network-multitool latest.
   images:
-    router: quay.io/frrouting/frr:10.1.0
-    # Pin by digest after the first pull: `make pin-images` prints the digests.
-    switch: ghcr.io/hellt/network-multitool:latest
-    host: ghcr.io/hellt/network-multitool:latest
+    router: quay.io/frrouting/frr@sha256:93c167b3834152d0a28fe1f3c8c9f76191c10fda34074fc9de7ca76d4058751a
+    switch: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
+    host: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
 
 nvidia:
   port_prefix: swp          # logical p1 -> swp1

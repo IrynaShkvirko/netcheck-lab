@@ -4,7 +4,7 @@ topology:
   nodes:
     r1:
       kind: linux
-      image: quay.io/frrouting/frr:10.1.0
+      image: quay.io/frrouting/frr@sha256:93c167b3834152d0a28fe1f3c8c9f76191c10fda34074fc9de7ca76d4058751a
       labels:
         netcheck.role: router
       binds:
@@ -16,7 +16,7 @@ topology:
       - ip link set eth1.10 up
     r2:
       kind: linux
-      image: quay.io/frrouting/frr:10.1.0
+      image: quay.io/frrouting/frr@sha256:93c167b3834152d0a28fe1f3c8c9f76191c10fda34074fc9de7ca76d4058751a
       labels:
         netcheck.role: router
       binds:
@@ -25,7 +25,7 @@ topology:
       - configs/r2/vtysh.conf:/etc/frr/vtysh.conf
     r3:
       kind: linux
-      image: quay.io/frrouting/frr:10.1.0
+      image: quay.io/frrouting/frr@sha256:93c167b3834152d0a28fe1f3c8c9f76191c10fda34074fc9de7ca76d4058751a
       labels:
         netcheck.role: router
       binds:
@@ -37,7 +37,7 @@ topology:
       - ip link set eth1.30 up
     sw1:
       kind: linux
-      image: ghcr.io/hellt/network-multitool:latest
+      image: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
       labels:
         netcheck.role: switch
       exec:
@@ -63,7 +63,7 @@ topology:
       - bridge vlan add dev eth4 vid 20
     sw2:
       kind: linux
-      image: ghcr.io/hellt/network-multitool:latest
+      image: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
       labels:
         netcheck.role: switch
       exec:
@@ -88,7 +88,7 @@ topology:
       - bridge vlan add dev eth4 vid 30
     h1:
       kind: linux
-      image: ghcr.io/hellt/network-multitool:latest
+      image: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
       labels:
         netcheck.role: host
       exec:
@@ -97,7 +97,7 @@ topology:
       - ip route replace default via 10.0.10.1 dev eth1
     h2:
       kind: linux
-      image: ghcr.io/hellt/network-multitool:latest
+      image: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
       labels:
         netcheck.role: host
       exec:
@@ -106,7 +106,7 @@ topology:
       - ip route del default dev eth0
     h3:
       kind: linux
-      image: ghcr.io/hellt/network-multitool:latest
+      image: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
       labels:
         netcheck.role: host
       exec:
@@ -115,7 +115,7 @@ topology:
       - ip route replace default via 10.0.10.1 dev eth1
     h4:
       kind: linux
-      image: ghcr.io/hellt/network-multitool:latest
+      image: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
       labels:
         netcheck.role: host
       exec:
@@ -124,7 +124,7 @@ topology:
       - ip route replace default via 10.0.30.1 dev eth1
     h5:
       kind: linux
-      image: ghcr.io/hellt/network-multitool:latest
+      image: ghcr.io/hellt/network-multitool@sha256:a8d96c19e593e227d7b16d320a04256ba00434028f0adb9f7da206bf098c7140
       labels:
         netcheck.role: host
       exec:
