@@ -66,3 +66,185 @@ pytest_add_cli_args_test_selection = ["tests/unit"]
 # mutmut runs the tests from a copy under mutants/. It copies tests/ and pyproject.toml
 # itself; the tests also read these from the repo root.
 also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py", "README.md", "scripts/", ".github/"]
+
+# The mutation floor (scripts/mutation-floor.py, `make mutation-floor`): each guarded module
+# keeps at least this % of its mutants killed (killed / all, a no-tests mutant counts against
+# it). Raise a floor when the check says so; never lower one to pass.
+[tool.mutation-floor]
+"netcheck.assertions.common" = 98
+"netcheck.assertions.l2" = 94
+"netcheck.assertions.ospf" = 92
+"netcheck.assertions.reachability" = 96
+"netcheck.backends.base" = 84
+"netcheck.convergence" = 97
+"netcheck.expected" = 96
+"netcheck.intent" = 99
+"netcheck.timing" = 99
+
+# Survivors and no-tests mutants of the guarded modules that are accepted, grouped by the
+# reason: "<reason>" = [mutant names, or fnmatch patterns]. An entry that no longer matches
+# a survivor fails the check: remove it. Editing a function renumbers its mutants, so its
+# entries go stale and its survivors are triaged again: that is the point.
+[tool.mutation-accepted]
+"report wording: text of a verdict, expected or actual line, evidence title, drift label or diagnosis that a person reads and no check depends on" = [
+    "netcheck.assertions.l2.x_check_no_extra_ports__mutmut_19",
+    "netcheck.assertions.l2.x_check_no_extra_ports__mutmut_28",
+    "netcheck.assertions.l2.x_check_port_vlans__mutmut_13",
+    "netcheck.assertions.l2.x_check_port_vlans__mutmut_17",
+    "netcheck.assertions.l2.x_check_port_vlans__mutmut_20",
+    "netcheck.assertions.l2.x_check_probes_reached_the_wire__mutmut_11",
+    "netcheck.assertions.l2.x_check_probes_reached_the_wire__mutmut_14",
+    "netcheck.assertions.l2.x_check_probes_reached_the_wire__mutmut_19",
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_28",
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_29",
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_84",
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_85",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_27",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_28",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_29",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_30",
+    "netcheck.assertions.ospf.x_assert_route_uses__mutmut_32",
+    "netcheck.assertions.ospf.x_assert_route_uses__mutmut_33",
+    "netcheck.assertions.ospf.x_describe_next_hops__mutmut_3",
+    "netcheck.assertions.ospf.x_describe_next_hops__mutmut_4",
+    "netcheck.assertions.ospf.x_describe_next_hops__mutmut_5",
+    "netcheck.assertions.ospf.x_ospf_interface_drift__mutmut_54",
+    "netcheck.assertions.ospf.x_ospf_interface_drift__mutmut_55",
+    "netcheck.assertions.ospf.x_ospf_interface_drift__mutmut_56",
+    "netcheck.backends.base.xǁBackendǁ_deploy_unless_reusable__mutmut_2",
+    "netcheck.backends.base.xǁBackendǁ_deploy_unless_reusable__mutmut_8",
+    "netcheck.backends.base.xǁBackendǁ_deploy_unless_reusable__mutmut_20",
+    "netcheck.backends.base.xǁBackendǁ_deploy_unless_reusable__mutmut_23",
+    "netcheck.backends.base.xǁBackendǁ_deploy_unless_reusable__mutmut_24",
+    "netcheck.backends.base.xǁBackendǁ_load_snapshot__mutmut_11",
+    "netcheck.backends.base.xǁBackendǁ_load_snapshot__mutmut_12",
+    "netcheck.backends.base.xǁBackendǁ_load_snapshot__mutmut_29",
+    "netcheck.backends.base.xǁBackendǁ_load_snapshot__mutmut_30",
+    "netcheck.backends.base.xǁBackendǁreset__mutmut_6",
+    "netcheck.backends.base.xǁBackendǁrestore__mutmut_6",
+    "netcheck.backends.base.xǁBackendǁrestore__mutmut_7",
+    "netcheck.backends.base.xǁBackendǁrestore__mutmut_8",
+    "netcheck.backends.base.xǁBackendǁrestore__mutmut_9",
+    "netcheck.backends.base.xǁBackendǁrestore__mutmut_17",
+]
+"diagnosis choice: which explanation line a missing adjacency gets (only one port down, or none Full); text only, the verdict and its expected/actual are asserted" = [
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_58",
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_64",
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_72",
+]
+"cleanup label: shown only in the log line when that undo fails" = [
+    "netcheck.assertions.common.x_start_capture__mutmut_6",
+    "netcheck.assertions.l2.x__force_on_link__mutmut_3",
+    "netcheck.convergence.x_measure_reconvergence__mutmut_22",
+]
+"capture filter and destination: they change only what the pcap evidence holds, which the unit fakes do not model" = [
+    "netcheck.assertions.l2.x_assert_isolated__mutmut_14",
+    "netcheck.assertions.l2.x_assert_isolated__mutmut_21",
+    "netcheck.assertions.l2.x_assert_isolated__mutmut_22",
+    "netcheck.assertions.l2.x_check_no_replies__mutmut_8",
+]
+"evidence that failed to read: these arguments only matter when the link or VLAN evidence raises, and then the report says so either way" = [
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_73",
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_74",
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_76",
+    "netcheck.assertions.l2.x_check_no_replies__mutmut_29",
+    "netcheck.assertions.l2.x_check_no_replies__mutmut_30",
+    "netcheck.assertions.l2.x_check_no_replies__mutmut_32",
+    "netcheck.assertions.l2.x_check_probes_reached_the_wire__mutmut_20",
+    "netcheck.assertions.l2.x_check_probes_reached_the_wire__mutmut_25",
+    "netcheck.assertions.l2.x_check_probes_reached_the_wire__mutmut_27",
+    "netcheck.assertions.ospf.x__routes_drift_report__mutmut_66",
+    "netcheck.assertions.ospf.x__routes_drift_report__mutmut_67",
+    "netcheck.assertions.ospf.x__routes_drift_report__mutmut_69",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_55",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_56",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_58",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_20",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_21",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_22",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_23",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_29",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_30",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_32",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_33",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_44",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_45",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_47",
+]
+"unreachable text: describe() shows the transport error when there is one, and a probe that did not raise always returned a result" = [
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_45",
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_47",
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_48",
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_49",
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_50",
+    "netcheck.assertions.reachability.x_assert_reachable__mutmut_37",
+    "netcheck.assertions.reachability.x_assert_reachable__mutmut_38",
+    "netcheck.assertions.reachability.x_assert_reachable__mutmut_39",
+]
+"warning location: mutmut's trampoline adds a call frame, so no test run under mutmut can tell stacklevel 2 from 3" = [
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_6",
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_9",
+    "netcheck.timing.xǁTimingǁrecord__mutmut_31",
+    "netcheck.timing.xǁTimingǁrecord__mutmut_32",
+]
+"unreachable fallback: the intent is validated on load, so router ids, link and host addresses and router-to-router costs are always set" = [
+    "netcheck.assertions.l2.x_check_not_routed__mutmut_20",
+    "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_4",
+    "netcheck.expected.xǁExpectedǁ_path_costs__mutmut_14",
+    "netcheck.expected.xǁExpectedǁadjacencies__mutmut_21",
+    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_24",
+    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_29",
+    "netcheck.intent.x_validate__mutmut_25",
+]
+"single area: every intent uses area 0, where these spellings of the intended area agree" = [
+    "netcheck.assertions.ospf.x_ospf_interface_drift__mutmut_25",
+    "netcheck.assertions.ospf.x_ospf_interface_drift__mutmut_26",
+]
+"equivalent: the same result for every input this code gets (a default the caller never leaves out, <= in a shortest-path relaxation, attachment(None) is None, reset(None) restores the baseline)" = [
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_63",
+    "netcheck.assertions.l2.x_check_no_replies__mutmut_15",
+    "netcheck.assertions.ospf.x__routes_drift_report__mutmut_32",
+    "netcheck.assertions.ospf.x__routes_drift_report__mutmut_34",
+    "netcheck.assertions.ospf.x_assert_route_next_hops__mutmut_53",
+    "netcheck.assertions.ospf.x_assert_route_present__mutmut_17",
+    "netcheck.assertions.ospf.x_assert_route_present__mutmut_19",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_37",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_39",
+    "netcheck.assertions.ospf.xǁ_RouterLookǁ__init____mutmut_3",
+    "netcheck.assertions.ospf.xǁ_RouterLookǁ__init____mutmut_4",
+    "netcheck.assertions.ospf.xǁ_RouterLookǁ__init____mutmut_5",
+    "netcheck.assertions.ospf.xǁ_RouterLookǁ__init____mutmut_6",
+    "netcheck.backends.base.xǁBackendǁup__mutmut_15",
+    "netcheck.expected.xǁExpectedǁ_path_costs__mutmut_16",
+    "netcheck.expected.xǁExpectedǁoriginator__mutmut_1",
+    "netcheck.expected.xǁExpectedǁospf_interfaces__mutmut_28",
+    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_2",
+    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_3",
+    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_5",
+    "netcheck.expected.xǁExpectedǁroutes__mutmut_3",
+    "netcheck.expected.xǁExpectedǁroutes__mutmut_5",
+    "netcheck.expected.xǁExpectedǁvlan_membership__mutmut_6",
+]
+"pacing: how long the stream runs before and after the failure; it moves no verdict, and the lab run measures it" = [
+    "netcheck.convergence.x_measure_reconvergence__mutmut_32",
+    "netcheck.convergence.x_measure_reconvergence__mutmut_78",
+]
+"snapshot file format: the id layout and JSON indent of a file netcheck only reads back by its path" = [
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_3",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_4",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_6",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_7",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_11",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_12",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_37",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_39",
+    "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_40",
+]
+"base-class message: render() is overridden by every backend that renders, and no test asks another one to" = [
+    "netcheck.backends.base.xǁBackendǁrender__mutmut_1",
+]
+"known gap: = and += differ only when one report gathers drift twice (hosts on two switches that both drift, or a second router with no adjacency); no unit scenario builds that yet" = [
+    "netcheck.assertions.l2.x_check_layer2_control__mutmut_89",
+    "netcheck.assertions.l2.x_check_no_replies__mutmut_45",
+    "netcheck.assertions.ospf.x_diagnose_missing_route__mutmut_18",
+]

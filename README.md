@@ -444,9 +444,19 @@ Mutation testing checks that the tests would notice a bug: mutmut changes the co
 edit at a time and reruns the tests against each change.
 
 ```bash
-make mutate                         # over tests/unit (slow; no lab needed)
+make mutate                         # over tests/unit, then the floor (slow; no lab needed)
+make mutation-floor                 # the floor again, on the last results
 make lab-up && make mutate-lab GROUP=FrrOspf   # opt-in, against the running local lab
 ```
+
+**The floor.** The modules the tests' verdicts rest on (the assertions, `convergence`,
+`timing`, `expected`, `intent`, `backends.base`) each keep a minimum share of mutants
+killed, set in `[tool.mutation-floor]` in `pyproject.toml`. Every survivor in them is either
+killed or listed in `[tool.mutation-accepted]` with the reason it is safe (report wording,
+equivalent code, a path no intent can reach). `scripts/mutation-floor.py check` enforces
+both, and an accepted entry that no longer matches a survivor fails too. A pull request
+mutates the guarded modules it changes (all of them when it changes the unit tests); the
+nightly run mutates everything.
 
 `GROUP` is one of `LinuxShell`, `FrrOspf`, `links-bridge`, `backend`, `all`. The lab profile
 never deploys and starts every mutant from the baseline. It never runs in CI. How to read
@@ -463,8 +473,10 @@ the PR, or use "Run workflow" in the Actions tab.
 | --- | --- | --- |
 | `checks` | unit tests on Python 3.11, 3.12, 3.13 and 3.14; ruff and mypy once, on 3.11 | the change only touches `docs/`, `.claude/`, `GLOSSARY.md`, `CLAUDE.md` |
 | `lab` | deploy, `make test-lab`, `make fault-check`, measurements summary, artifacts | also when it only touches unit tests and Markdown (`scripts/lab-affected.py`) |
+| `mutation` | mutmut on the guarded modules the change can weaken, held to the floor | when it touches none of them and no unit test (`scripts/mutation-floor.py select`) |
 
-`.github/workflows/nightly.yml` gates the SLAs (see Timing). Every job has a timeout,
+`.github/workflows/nightly.yml` gates the SLAs (see Timing) and runs every mutant against the
+floor (see Mutation testing). Every job has a timeout,
 dependencies install with `uv sync --locked`, and every action is pinned by commit SHA with its
 version in a comment. Dependabot (`.github/dependabot.yml`) opens a weekly PR for actions and
 one for Python dependencies. Dependabot cannot update the container images in `backends.yaml`:
