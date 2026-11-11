@@ -355,7 +355,8 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
                               └─ nvidia: NVUE REST (JSON); hosts over SSH (planned)
 ```
 
-`netcheck/` is split into packages; each one imports only the ones above it in this table:
+`netcheck/` is split into layers; each package imports only the ones above it in this
+table (`tests/unit/test_layers.py` holds the code to it):
 
 | Path | What |
 | --- | --- |
