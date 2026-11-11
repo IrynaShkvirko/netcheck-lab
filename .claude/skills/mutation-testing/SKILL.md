@@ -126,8 +126,8 @@ survived. The guarded modules went from 50–90% to 92–99%:
 The modules a verdict rests on are guarded: the five `assertions` modules (`common`, `l2`,
 `ospf`, `reachability`, `convergence`), `model.expected`, `model.intent`, `run.timing` and
 `backends.base`. Two rules hold for each, enforced by
-`scripts/mutation-floor.py check` (`make mutation-floor`, the end of `make mutate`, the CI
-`mutation` job and the nightly run):
+`scripts/mutation-floor.py check` (`make mutation-floor`, the end of `make mutate` and the
+nightly `mutation` job):
 
 1. **The score stays at or above the floor** in `[tool.mutation-floor]` (`pyproject.toml`).
    Score = killed / all mutants of the module; a survivor or a no-tests mutant counts against
@@ -146,8 +146,9 @@ difference is text a person reads. A new reason needs the same bar.
 
 **Editing a guarded function renumbers its mutants.** Its accepted names go stale and the
 check fails: run `uv run mutmut run "<module>.<function>*"`, then kill or re-accept what
-survives. A PR's `mutation` job mutates the guarded modules it changes, and all of them when
-it changes `tests/unit/`, `conftest.py` or `pyproject.toml`; `select` decides
+survives. Pull requests don't run mutation testing (it takes too long), so mutate the guarded
+modules a change touches before pushing, and all of them when it changes `tests/unit/`,
+`conftest.py` or `pyproject.toml`; `select` lists them
 (`git diff --name-only master | python3 scripts/mutation-floor.py select`).
 
 Two harness rules the floor depends on: every file the unit tests read from the repo root is
