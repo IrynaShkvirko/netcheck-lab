@@ -1,0 +1,19 @@
+# Weekly update PRs, grouped so one PR carries all of a kind. Actions are pinned by commit
+# SHA with the version in a comment; Dependabot updates both. Container images in
+# backends.yaml are pinned by digest and updated by hand: `make pin-images` (see README).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]

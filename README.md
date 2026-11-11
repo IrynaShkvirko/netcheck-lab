@@ -453,6 +453,24 @@ never deploys and starts every mutant from the baseline. It never runs in CI. Ho
 and triage the results, and the recorded baselines, are in
 [`.claude/skills/mutation-testing/SKILL.md`](.claude/skills/mutation-testing/SKILL.md).
 
+## CI
+
+`.github/workflows/ci.yml` runs on pull requests and on `master` after each merge, once per
+commit: a new push to a PR cancels the run before it. A branch without a PR runs nothing; open
+the PR, or use "Run workflow" in the Actions tab.
+
+| Job | What | Skipped when |
+| --- | --- | --- |
+| `checks` | unit tests on Python 3.11, 3.12, 3.13 and 3.14; ruff and mypy once, on 3.11 | the change only touches `docs/`, `.claude/`, `GLOSSARY.md`, `CLAUDE.md` |
+| `lab` | deploy, `make test-lab`, `make fault-check`, measurements summary, artifacts | also when it only touches unit tests and Markdown (`scripts/lab-affected.py`) |
+
+`.github/workflows/nightly.yml` gates the SLAs (see Timing). Every job has a timeout,
+dependencies install with `uv sync --locked`, and every action is pinned by commit SHA with its
+version in a comment. Dependabot (`.github/dependabot.yml`) opens a weekly PR for actions and
+one for Python dependencies. Dependabot cannot update the container images in `backends.yaml`:
+`make pin-images` prints their digests to paste there, then `make golden` (the golden topology
+names the images).
+
 ## Development workflow
 
 New features are specified before they are built: requirements in
