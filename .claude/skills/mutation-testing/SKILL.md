@@ -28,8 +28,10 @@ would notice if it were wrong.
 - `mutmut` is in the dev dependency group (3.8.1 when added; runs on Python 3.14).
 - `[tool.mutmut]` in `pyproject.toml`: mutate `netcheck/` except
   `netcheck/transport/docker_exec.py` and `netcheck/transport/nvue_rest.py`; test with
-  `tests/unit`; copy `intent/`, `timing.yaml`, `backends.yaml` and the root `conftest.py`
-  into the run (mutmut copies `tests/` and `pyproject.toml` itself).
+  `tests/unit`; copy `intent/`, `timing.yaml`, `backends.yaml`, the root `conftest.py`,
+  `README.md`, `scripts/` and `.github/` into the run (mutmut copies `tests/` and
+  `pyproject.toml` itself). `also_copy` cannot copy a single file into a folder that is not
+  copied (mutmut does not create the folder), which is why the floor lives in `pyproject.toml`.
 - mutmut works in `mutants/` (git-ignored): a mutated copy of the source plus the copied
   tests. Delete it to start from scratch.
 
@@ -101,8 +103,55 @@ First full run (2026-11-07): 5,476 mutants, **67.2% killed** (3,681), 1,380 surv
 
 Most of the 402 no-tests mutants are lab-only code in `backends/local.py` and
 `backends/nvidia_air.py` (deploy, destroy, `is_running`) and `get_backend`, which the tests
-replace with fakes. There is no CI threshold yet; use the baseline to see whether a change
-moved the score, not as a target.
+replace with fakes.
+
+Second full run (2026-11-11, before the floor): 7,039 mutants, **70.4% killed** (4,958 with
+17 timeouts), 1,749 survived, 332 no tests. With the floor's tests: **77.4%** (5,445), 1,270
+survived. The guarded modules went from 50–90% to 92–99%:
+
+| Module | Before | After | Module | Before | After |
+|---|---|---|---|---|---|
+| `convergence` | 49.7% | 97.9% | `assertions.ospf` | 73.1% | 92.7% |
+| `assertions.common` | 54.3% | 98.9% | `assertions.l2` | 78.4% | 94.2% |
+| `assertions.reachability` | 56.0% | 96.0% | `backends.base` | 82.8% | 85.0% |
+| `timing` | 82.9% | 99.1% | `intent` | 84.3% | 99.7% |
+| `expected` | 90.5% | 96.6% | | | |
+
+## The floor (guarded modules)
+
+The modules a verdict rests on are guarded: the four `assertions` modules, `convergence`,
+`timing`, `expected`, `intent` and `backends.base`. Two rules hold for each, enforced by
+`scripts/mutation-floor.py check` (`make mutation-floor`, the end of `make mutate` and the
+nightly `mutation` job):
+
+1. **The score stays at or above the floor** in `[tool.mutation-floor]` (`pyproject.toml`).
+   Score = killed / all mutants of the module; a survivor or a no-tests mutant counts against
+   it, accepted or not, so accepting never raises a score. When the check says "raise the
+   floor", raise it in the same PR. Never lower one to pass: kill the survivor instead.
+2. **Every survivor and no-tests mutant is killed or accepted** in `[tool.mutation-accepted]`,
+   grouped by reason: `"<reason>" = ["<mutant name>", ...]`. An entry that matches no survivor
+   any more fails the check, so the list cannot excuse the next survivor of the same name.
+
+Accepted reasons in use: report wording, cleanup and warning labels, capture filters,
+arguments that matter only when evidence fails to read, unreachable fallbacks of a validated
+intent, single-area spellings, equivalent code, pacing constants, the snapshot file format,
+the base-class `render()` message, and one **known gap** (drift gathered twice in one report).
+Prefer a test; accept only when no test could tell the mutant from the code, or the only
+difference is text a person reads. A new reason needs the same bar.
+
+**Editing a guarded function renumbers its mutants.** Its accepted names go stale and the
+check fails: run `uv run mutmut run "<module>.<function>*"`, then kill or re-accept what
+survives. Pull requests don't run mutation testing (it takes too long), so mutate the guarded
+modules a change touches before pushing, and all of them when it changes `tests/unit/`,
+`conftest.py` or `pyproject.toml`; `select` lists them
+(`git diff --name-only master | python3 scripts/mutation-floor.py select`).
+
+Two harness rules the floor depends on: every file the unit tests read from the repo root is
+in `also_copy` (a missing one makes mutmut's first pass fail; `README.md`, `scripts/` and
+`.github/` were missing until the floor was added), and a test that starts a child pytest
+must not let mutmut's first pass record hits from the child (see
+`test_unit_run_header_and_summary_count_documentation_samples`). A test that asserts a
+warning's `stacklevel` cannot work under mutmut either: the trampoline adds a frame.
 
 ## Reading a survivor
 

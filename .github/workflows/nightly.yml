@@ -4,6 +4,8 @@ name: nightly
 # repeated 5 times and its median held to the SLA. PR runs keep recording SLAs only
 # (NETCHECK_SLA_MODE=record); this job is where a slow regression fails. The measurement
 # history lives in the Actions cache, and the job summary compares tonight with earlier runs.
+# The mutation job runs every mutant and holds every guarded module to its floor
+# ([tool.mutation-floor] in pyproject.toml). Pull requests don't run it: it takes too long.
 # Scheduled runs use the default branch.
 
 on:
@@ -62,3 +64,34 @@ jobs:
             history/
       - if: always() && steps.up.outcome != 'skipped'
         run: make lab-down
+
+  mutation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # GitHub's downloads sometimes answer 504 for a few minutes: try uv twice
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        id: uv
+        continue-on-error: true
+      - if: steps.uv.outcome == 'failure'
+        run: sleep 60
+      - if: steps.uv.outcome == 'failure'
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: uv sync --locked
+      - run: uv run mutmut run
+      - name: Floor and survivors in the job summary
+        run: |
+          set -o pipefail
+          uv run python scripts/mutation-floor.py check | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Survivors of every module
+        if: always()
+        run: uv run mutmut results > mutmut-results.txt || true
+      - name: Upload the survivors
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutmut-results
+          path: mutmut-results.txt

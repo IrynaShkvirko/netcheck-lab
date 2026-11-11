@@ -45,7 +45,6 @@ class Backend(ABC):
     def __init__(self, intent: Intent, settings: dict[str, Any], root: Path) -> None:
         self.intent = intent
         self.settings = settings
-        self.root = root
         self.state = LabState(root)
         self.snapshot_dir = self.state.snapshots
 

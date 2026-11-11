@@ -8,7 +8,7 @@ CLAB_VERSION = $(shell grep containerlab_version backends.yaml | cut -d'"' -f2)
 
 .PHONY: install install-clab render lab-up lab-fresh lab-down lab-reset fault-wrong-vlan \
         fault-missing-ospf fault-check record-fixtures test-unit test-lab test-lab-live smoke demo \
-        lint typecheck check golden mutate mutate-lab pin-images
+        lint typecheck check golden mutate mutation-floor mutate-lab pin-images
 
 install:            ## Python deps (uv)
 	uv sync
@@ -77,9 +77,13 @@ check: lint typecheck test-unit
 golden:             ## rewrite tests/unit/golden from the current render; then review git diff
 	NETCHECK_UPDATE_GOLDEN=1 uv run pytest tests/unit/test_golden.py -q -rs
 
-mutate:             ## mutation testing over tests/unit (slow; see .claude/skills/mutation-testing)
+mutate:             ## mutation testing over tests/unit, then the floor (slow; see .claude/skills/mutation-testing)
 	uv run mutmut run
 	uv run mutmut results
+	$(MAKE) mutation-floor
+
+mutation-floor:     ## hold the last mutmut results to the floors in pyproject.toml (scores, accepted survivors)
+	uv run python scripts/mutation-floor.py check
 
 # Lab mutation profile (mutation/lab): functions of the local backend that send real
 # commands and no unit test reaches. Never deploy/destroy, LocalSnapshot or the lifecycle.

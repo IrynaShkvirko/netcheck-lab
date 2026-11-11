@@ -14,6 +14,7 @@ from netcheck.assertions import (
 from netcheck.capabilities import OspfNeighbor, PortVlans, Route
 from netcheck.ports import PortMap
 from netcheck.report import FailureReport, IntentViolation
+from netcheck.transport.base import TransportError
 
 
 def test_isolation_passes_and_cleans_up(fake) -> None:  # type: ignore[no-untyped-def]
@@ -47,10 +48,13 @@ def test_wrong_vlan_report_points_at_the_drifted_port(fake) -> None:  # type: ig
         assert_isolated(lab["h1"], lab["h3"])
     report = exc.value.report
     assert report.verdict == "h1 (VLAN 10) and h3 (VLAN 20) must be isolated"
+    assert (report.expected, report.actual) == ("0/5 ICMP replies h1 -> h3 over L2", "5/5 replies")
     drifted = [d for d in report.drift if d.expected != d.actual]
     assert [d.where for d in drifted] == ["sw1:p3"]
+    assert [d.where for d in report.drift] == ["sw1:p1", "sw1:p3"]  # both hosts' ports
     assert "VLAN 10: p1, p2, p3, p4" in report.evidence["sw1 VLAN membership"]
-    assert report.capture_summary and report.capture_files
+    assert report.evidence["h1 neighbor table"] != ["(none)"]  # h1 resolved h3: it answered
+    assert report.capture_summary[0] == "h3:p1" and report.capture_files
 
 
 def test_missing_ospf_network_is_diagnosed_as_not_advertised(fake) -> None:  # type: ignore[no-untyped-def]
@@ -135,8 +139,8 @@ def test_adjacency_is_checked_per_link(fake) -> None:  # type: ignore[no-untyped
         assert_ospf_neighbor_full(lab["r1"], lab["r2"], port="p3")
     report = exc.value.report
     assert report.verdict == "r1 must have a Full OSPF adjacency with r2 (2.2.2.2) via r1:p3"
-    assert report.actual == "state absent"
-    assert "only p3 is down" in report.evidence["diagnosis"][0]
+    assert (report.expected, report.actual) == ("state Full", "state absent")
+    assert report.evidence["diagnosis"] == ["r1 is Full with r2 via p2; only p3 is down"]
     assert list(k for k in report.evidence if "link" in k) == ["r1:p3 link (backup)"]
 
 
@@ -255,6 +259,9 @@ def test_unreadable_neighbor_table_is_not_called_no_adjacency(fake, monkeypatch)
         "r1: could not read its OSPF neighbors (TransportError: r1: docker exec failed)"
     )
     assert "no Full adjacency" not in diagnosis
+    assert exc.value.report.evidence["evidence unavailable"][0] == (
+        "r1 neighbors: TransportError: r1: docker exec failed"
+    )
 
 
 def test_drift_report_reads_each_router_once_and_shows_its_lsdb(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -307,3 +314,238 @@ def test_neighbor_check_reads_the_table_once(fake, monkeypatch) -> None:  # type
     report = exc.value.report
     assert report.evidence["r1 neighbors"] == ["2.2.2.2 Full via p2"]
     assert "only p3 is down" in report.evidence["diagnosis"][0]
+
+
+# ---- route reports: what they say and when the router cannot be read (improvement 6) --
+
+EXTRA = Route("10.9.9.0/24", "ospf", ("10.0.12.1",), True)
+
+
+def _full_both_ways(parts) -> None:  # type: ignore[no-untyped-def]
+    parts["ospf_r1"].nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2")]
+    parts["ospf_r2"].nbrs = [OspfNeighbor("1.1.1.1", "Full", "p1")]
+
+
+def test_an_unexpected_route_is_drift_and_named(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    _full_both_ways(parts)
+    parts["ospf_r1"].rib = R1_RIB | {EXTRA.prefix: EXTRA}
+    parts["ospf_r2"].rib = R2_RIB
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    report = exc.value.report
+    assert (report.expected, report.actual) == (
+        "2 routes installed, no others",
+        "0 missing, 1 unexpected",
+    )
+    assert [(d.where, d.expected, d.actual, d.note) for d in report.state_diff] == [
+        ("r1 routing table", "absent", "10.9.9.0/24", "not in the intent")
+    ]
+    assert report.evidence["diagnosis"] == [
+        "unexpected routes: a router advertises a prefix the intent does not list "
+        "(check its OSPF interfaces)"
+    ]
+
+
+def test_a_missing_route_names_its_originator(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    _full_both_ways(parts)
+    parts["ospf_r2"].rib = R2_RIB
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    assert [(d.where, d.expected, d.actual, d.note) for d in exc.value.report.state_diff] == [
+        ("r1 routing table", "10.0.30.0/24", "absent", "advertised by r2")
+    ]
+
+
+def test_no_adjacency_with_intended_settings_points_at_link_state(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    for r in ("r1", "r2"):
+        parts[f"ospf_{r}"].interfaces = lab.expected.ospf_interfaces(r)
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    report = exc.value.report
+    assert report.drift == []
+    assert report.evidence["diagnosis"] == [
+        "no OSPF adjacency between the routers on any link: they exchange no routes",
+        "OSPF link settings match the intent: check link state (make smoke)",
+    ]
+
+
+def _routes_unreadable(*_: object) -> dict[str, Route]:
+    raise TransportError("r1: docker exec failed")
+
+
+def test_routes_that_cannot_be_read_say_so(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    parts["ospf_r2"].rib = R2_RIB
+    monkeypatch.setattr(parts["ospf_r1"], "routes", _routes_unreadable)
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    report = exc.value.report
+    assert report.actual == "0 missing, 0 unexpected"
+    assert report.evidence["last read failed"] == ["r1: docker exec failed"]
+
+
+def test_a_route_known_but_not_installed_is_not_present(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions import assert_route_present
+
+    lab, parts = fake
+    parts["ospf_r1"].rib = {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", ("10.0.12.1",), False)}
+    with pytest.raises(IntentViolation) as exc:
+        assert_route_present(lab["r1"], "10.0.30.0/24")
+    report = exc.value.report
+    assert (report.verdict, report.expected, report.actual) == (
+        "r1 must learn 10.0.30.0/24 via OSPF from r2",
+        "10.0.30.0/24 installed in r1 routing table",
+        "route absent",
+    )
+
+
+@pytest.mark.parametrize("check", ["uses", "next_hops"])
+def test_a_route_check_on_an_unreadable_router_reports_why(fake, monkeypatch, check: str) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions import assert_route_next_hops, assert_route_uses
+    from netcheck.expected import NextHop
+
+    lab, parts = fake
+    monkeypatch.setattr(parts["ospf_r1"], "routes", _routes_unreadable)
+    hop = NextHop("r2", "p2", "10.0.12.1")
+    run = {
+        "uses": lambda: assert_route_uses(lab["r1"], "10.0.30.0/24", "10.0.12.1"),
+        "next_hops": lambda: assert_route_next_hops(lab["r1"], "10.0.30.0/24", [hop]),
+    }[check]
+    with pytest.raises(IntentViolation) as exc:
+        run()
+    report = exc.value.report
+    assert report.verdict.startswith("r1 must r")  # no prefix unless the caller gives one
+    assert report.actual == "no answer: r1: docker exec failed"
+    assert (
+        report.expected
+        == {"uses": "next hop 10.0.12.1", "next_hops": "next hops ['10.0.12.1']"}[check]
+    )
+    assert report.evidence["r1 neighbors"] == ["(none)"]
+
+
+def test_a_route_on_the_wrong_next_hop_shows_the_one_it_has(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions import assert_route_next_hops, assert_route_uses
+    from netcheck.expected import NextHop
+
+    lab, parts = fake
+    parts["ospf_r1"].rib = {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", ("10.0.12.3",), True)}
+    with pytest.raises(IntentViolation) as exc:
+        assert_route_uses(lab["r1"], "10.0.30.0/24", "10.0.12.1", why="before the failure, ")
+    assert (exc.value.report.verdict, exc.value.report.actual) == (
+        "before the failure, r1 must route 10.0.30.0/24 via 10.0.12.1",
+        "next hops ['10.0.12.3']",
+    )
+    with pytest.raises(IntentViolation) as exc:
+        assert_route_next_hops(lab["r1"], "10.0.30.0/24", [NextHop("r2", "p2", "10.0.12.1")])
+    report = exc.value.report
+    assert report.verdict == (
+        "r1 must reach 10.0.30.0/24 via r2 (10.0.12.1), the cheapest path in the intent"
+    )
+    assert report.actual == "next hops ['10.0.12.3']"
+    assert "r1 OSPF link settings" not in report.evidence  # read fine: drift, not a note
+
+
+def test_an_unreadable_lsdb_is_noted(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    parts["ospf_r1"].nbrs = [OspfNeighbor("2.2.2.2", "Full", "p2")]
+    monkeypatch.setattr(parts["ospf_r1"], "lsdb_prefixes", _routes_unreadable)
+    with pytest.raises(IntentViolation) as exc:
+        assert_route_present(lab["r1"], "10.0.30.0/24")
+    assert exc.value.report.evidence["evidence unavailable"] == [
+        "r1 LSDB: TransportError: r1: docker exec failed"
+    ]
+
+
+def test_every_ospf_interface_field_is_named_when_it_differs(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions.ospf import ospf_interface_drift
+
+    lab, _ = fake
+    want = lab.expected.ospf_interfaces("r1")["p2"]
+    live = replace(
+        want, area="1", passive=True, dead_interval=40, network="broadcast", cost=None, addresses=()
+    )
+    assert [(d.where, d.expected, d.actual) for d in ospf_interface_drift("r1:p2", want, live)] == [
+        ("r1:p2 OSPF area", "0", "1"),
+        ("r1:p2 addresses", "10.0.12.0/31", "none"),
+        ("r1:p2 passive", "False", "True"),
+        ("r1:p2 dead interval", "4", "40"),
+        ("r1:p2 network type", "point-to-point", "broadcast"),
+        ("r1:p2 cost", "10", "not set"),
+    ]
+    two = replace(want, addresses=("10.0.12.0/31", "10.9.0.1/24"))
+    (line,) = ospf_interface_drift("r1:p2", want, two)
+    assert line.actual == "10.0.12.0/31, 10.9.0.1/24"
+    assert [(d.where, d.expected, d.actual) for d in ospf_interface_drift("r1:p2", want, None)] == [
+        ("r1:p2 OSPF interface", "configured", "absent")
+    ]
+
+
+def test_an_ospf_interface_off_the_intent_is_reported(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions import assert_ospf_interface_matches_intent
+
+    lab, parts = fake
+    parts["ospf_r1"].interfaces = lab.expected.ospf_interfaces("r1")
+    parts["ospf_r1"].interfaces["p2"] = replace(parts["ospf_r1"].interfaces["p2"], cost=50)
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_interface_matches_intent(lab["r1"], "p2")
+    report = exc.value.report
+    assert (report.verdict, report.expected, report.actual) == (
+        "r1:p2 OSPF settings must match the intent",
+        "OSPF area, timers, network type, cost and addresses as in the intent",
+        "1 setting(s) differ",
+    )
+    assert report.evidence["r1:p2 live OSPF settings"] == [str(parts["ospf_r1"].interfaces["p2"])]
+
+
+def test_drift_from_every_router_stays_in_the_report(fake) -> None:  # type: ignore[no-untyped-def]
+    """Both routers miss a prefix, each because the other does not advertise it: the
+    report keeps both routers' drift, not only the last one read."""
+    lab, parts = fake
+    _full_both_ways(parts)
+    for r, port in (("r1", "p1.10"), ("r2", "p3")):
+        parts[f"ospf_{r}"].interfaces = dict(lab.expected.ospf_interfaces(r))
+        parts[f"ospf_{r}"].interfaces[port] = replace(
+            parts[f"ospf_{r}"].interfaces[port], area=None
+        )
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    report = exc.value.report
+    assert [d.where for d in report.drift] == [
+        "r2:p3 (eth3) OSPF area",
+        "r1:p1.10 (eth1.10) OSPF area",
+    ]
+    assert report.evidence["diagnosis"] == [
+        "r1: adjacency Full, but r2 is not advertising 10.0.30.0/24",
+        "r2: adjacency Full, but r1 is not advertising 10.0.10.0/24",
+    ]
+
+
+def test_no_adjacency_keeps_the_link_drift_of_every_router(fake) -> None:  # type: ignore[no-untyped-def]
+    lab, parts = fake
+    for r in ("r1", "r2"):
+        parts[f"ospf_{r}"].interfaces = {
+            name: replace(i, dead_interval=40) if not i.passive else i
+            for name, i in lab.expected.ospf_interfaces(r).items()
+        }
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_routes_match_intent()
+    assert [d.where for d in exc.value.report.drift] == [
+        "r1:p2 (primary) dead interval",
+        "r1:p3 (backup) dead interval",
+        "r2:p1 (primary) dead interval",
+        "r2:p2 (backup) dead interval",
+    ]
+
+
+def test_a_gateway_sub_interface_off_the_intent_is_named_by_its_port(fake) -> None:  # type: ignore[no-untyped-def]
+    from netcheck.assertions import assert_ospf_interface_matches_intent
+
+    lab, parts = fake
+    parts["ospf_r1"].interfaces = dict(lab.expected.ospf_interfaces("r1"))
+    parts["ospf_r1"].interfaces["p1.10"] = replace(parts["ospf_r1"].interfaces["p1.10"], area="1")
+    with pytest.raises(IntentViolation) as exc:
+        assert_ospf_interface_matches_intent(lab["r1"], "p1.10")
+    assert [d.where for d in exc.value.report.drift] == ["r1:p1.10 OSPF area"]  # trunk: no label
