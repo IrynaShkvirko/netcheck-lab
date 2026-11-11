@@ -220,3 +220,27 @@ def test_reset_on_start_that_cannot_restore_raises(fake, monkeypatch) -> None:  
     parts["snapshot_r1"].fail_with = RuntimeError("link will not come up")
     with pytest.raises(RestoreFailed, match="r1: RuntimeError: link will not come up"):
         lab.backend.up()
+
+
+def test_missing_ports_checks_every_device_after_one_without_links(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A device with no Links capability is skipped, not the end of the check: a lost port
+    on any later device still counts."""
+    from netcheck.capabilities import Links
+
+    lab, _ = fake
+    assert lab.backend.missing_ports() == []
+    del lab.devices["r1"].capabilities[Links]  # r1 comes first
+    h3 = lab.devices["h3"]
+    monkeypatch.setattr(h3.links, "link_states", lambda ports: {})  # its container restarted
+    assert lab.backend.missing_ports() == [f"h3:{lp} ({real})" for lp, real in h3.port_map.items()]
+
+
+def test_restore_failure_names_every_device_and_its_error() -> None:
+    err = RestoreFailed("baseline-1", {"r1": "ospf still differs", "sw1": "vlan 20 missing"})
+    assert (err.snapshot_id, err.errors) == (
+        "baseline-1",
+        {"r1": "ospf still differs", "sw1": "vlan 20 missing"},
+    )
+    assert str(err) == (
+        "restore of baseline-1 failed on 2 device(s): r1: ospf still differs; sw1: vlan 20 missing"
+    )
