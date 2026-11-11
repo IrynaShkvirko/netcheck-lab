@@ -1,31 +1,77 @@
 name: ci
 
+# Pull requests, and master after each merge (the commit that lands on master is tested even
+# when another PR merged in between). A push to a branch without a PR runs nothing: open the
+# PR or use "Run workflow". Changes only to docs and agent files skip CI entirely; changes
+# only to unit tests and Markdown skip the lab job (scripts/lab-affected.py).
 on:
-  push:
   pull_request:
+    paths-ignore: ["docs/**", ".claude/**", "GLOSSARY.md", "CLAUDE.md"]
+  push:
+    branches: [master]
+    paths-ignore: ["docs/**", ".claude/**", "GLOSSARY.md", "CLAUDE.md"]
   workflow_dispatch:
 
+# a new push to a PR cancels the run for the commit before it; master runs always finish
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+# Actions are pinned by commit SHA (a tag can be moved), with the version in a comment;
+# Dependabot (.github/dependabot.yml) proposes updates.
 jobs:
   checks:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]   # requires-python >=3.11, up to the newest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # GitHub's downloads sometimes answer 504 for a few minutes: try uv twice
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         id: uv
         continue-on-error: true
+        with:
+          python-version: ${{ matrix.python }}
       - if: steps.uv.outcome == 'failure'
         run: sleep 60
       - if: steps.uv.outcome == 'failure'
-        uses: astral-sh/setup-uv@v5
-      - run: uv sync
-      - run: uv run ruff check . && uv run ruff format --check .
-      - run: uv run mypy
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked   # uv.lock as committed; a stale lock fails here
+      - if: matrix.python == '3.11'   # lint and types once, on the oldest supported version
+        run: uv run ruff check . && uv run ruff format --check . && uv run mypy
       - run: uv run pytest tests/unit
 
-  lab:
-    needs: checks
+  changes:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      lab: ${{ steps.diff.outputs.lab }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # no base (manual run, first push): no list, so the lab runs
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BASE" HEAD
+          fi | python3 scripts/lab-affected.py | tee -a "$GITHUB_OUTPUT"
+
+  lab:
+    needs: [checks, changes]
+    if: needs.changes.outputs.lab == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
       checks: write                  # the JUnit report publishes a check run
@@ -33,16 +79,16 @@ jobs:
       NETCHECK_SLA_MODE: record      # SLAs recorded, not enforced, on shared runners (ADR-0004)
       NETCHECK_TIME_FACTOR: "2"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # GitHub's downloads sometimes answer 504 for a few minutes: try uv twice
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         id: uv
         continue-on-error: true
       - if: steps.uv.outcome == 'failure'
         run: sleep 60
       - if: steps.uv.outcome == 'failure'
-        uses: astral-sh/setup-uv@v5
-      - run: uv sync
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: uv sync --locked
       - run: make install-clab   # retries and checks each download (scripts/install-clab.sh)
       - id: up
         run: make lab-up
@@ -55,13 +101,13 @@ jobs:
         run: uv run python -m netcheck summary >> "$GITHUB_STEP_SUMMARY"
       - name: Upload reports, device logs and captures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: netcheck-artifacts
           path: artifacts/
       - name: Publish JUnit summary
         if: always() && hashFiles('artifacts/junit.xml') != ''   # no tests ran, nothing to report
-        uses: mikepenz/action-junit-report@v4
+        uses: mikepenz/action-junit-report@db71d41eb79864e25ab0337e395c352e84523afe # v4.3.1
         with:
           report_paths: artifacts/junit.xml
       - if: always() && steps.up.outcome != 'skipped'   # nothing to tear down otherwise

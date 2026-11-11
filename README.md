@@ -269,7 +269,7 @@ Start with the error text: command failures name the container they ran on
 | "ping ... did not run" | A host could not run `ping` at all (container down, tool missing); this used to look like "isolated" | `make smoke`; `make lab-fresh` if a container is down |
 | Isolation or OSPF tests fail right after a demo | A demo fault is still applied | `make lab-reset` |
 | OSPF neighbor test fails just after deploy | Adjacencies still forming | Wait ~10 s and rerun; check with `vtysh -c "show ip ospf neighbor"` |
-| `exec format error` when the lab starts | An image has no build for your CPU (e.g. arm64 on Apple Silicon) | Pick a multi-arch image in `backends.yaml`, then `make lab-fresh` |
+| `exec format error` when the lab starts | An image has no build for your CPU (e.g. arm64 on Apple Silicon) | Pick a multi-arch image in `backends.yaml` and pin the digest of its index (`make pin-images` after pulling by tag), then `make golden` and `make lab-fresh` |
 | `permission denied ... docker.sock` | Your user is not in the `docker` group | `sudo usermod -aG docker $USER && newgrp docker` |
 | `containerlab: command not found` | Containerlab not installed in this shell (on macOS: you are not inside the VM) | `orb -m netlab`, or `make install-clab` |
 | Permission errors under `build/` on a Mac-mounted folder | File sharing between macOS and the VM | Copy the repo into the VM's home (`cp -r /Users/<you>/.../netcheck-lab ~/`) and run there |
@@ -453,6 +453,24 @@ never deploys and starts every mutant from the baseline. It never runs in CI. Ho
 and triage the results, and the recorded baselines, are in
 [`.claude/skills/mutation-testing/SKILL.md`](.claude/skills/mutation-testing/SKILL.md).
 
+## CI
+
+`.github/workflows/ci.yml` runs on pull requests and on `master` after each merge, once per
+commit: a new push to a PR cancels the run before it. A branch without a PR runs nothing; open
+the PR, or use "Run workflow" in the Actions tab.
+
+| Job | What | Skipped when |
+| --- | --- | --- |
+| `checks` | unit tests on Python 3.11, 3.12, 3.13 and 3.14; ruff and mypy once, on 3.11 | the change only touches `docs/`, `.claude/`, `GLOSSARY.md`, `CLAUDE.md` |
+| `lab` | deploy, `make test-lab`, `make fault-check`, measurements summary, artifacts | also when it only touches unit tests and Markdown (`scripts/lab-affected.py`) |
+
+`.github/workflows/nightly.yml` gates the SLAs (see Timing). Every job has a timeout,
+dependencies install with `uv sync --locked`, and every action is pinned by commit SHA with its
+version in a comment. Dependabot (`.github/dependabot.yml`) opens a weekly PR for actions and
+one for Python dependencies. Dependabot cannot update the container images in `backends.yaml`:
+`make pin-images` prints their digests to paste there, then `make golden` (the golden topology
+names the images).
+
 ## Development workflow
 
 New features are specified before they are built: requirements in
@@ -466,7 +484,7 @@ passes `make check`.
 ## Status
 
 - Framework core, intent rendering, assertions, reports, cleanup and timing: done, unit-tested with fake devices.
-- Local backend: verified end to end on a real lab (Containerlab 0.76, FRR 10.1, Apple Silicon via OrbStack) and in GitHub Actions (`lab` job), including the code-review fixes. Lab mutation runs found and closed two isolation gaps: link restores are now verified, and a mutation run never deploys and starts every mutant from the baseline. Next: pin the switch and host image by digest with `make pin-images`.
+- Local backend: verified end to end on a real lab (Containerlab 0.76, FRR 10.1, Apple Silicon via OrbStack) and in GitHub Actions (`lab` job), including the code-review fixes. Lab mutation runs found and closed two isolation gaps: link restores are now verified, and a mutation run never deploys and starts every mutant from the baseline. Images are pinned by digest in `backends.yaml` (`make pin-images` to update).
 - Local backend, parsers: tested on real device output too. `make record-fixtures` records every device of a healthy campus-mini lab through the backend's own adapters (`tests/unit/fixtures/local/`, captured from FRR 10.1 per `provenance.yaml`), and `tests/unit/test_local_contracts.py` replays it: adjacencies, routes over the cheapest path, the OSPF interfaces FRR prints back, bridge VLANs, links, host routes and pings must read as the intent. Re-record after changing an adapter's command or the images; a replay that asks for a command never recorded fails.
 - NVIDIA backend, device side: **unverified**. NVUE responses are parsed into the same normalized types as FRR, and config changes go through the NVUE revision flow, but 0 of 10 NVUE samples captured from a device: they were written from the NVIDIA docs (`tests/unit/fixtures/nvue/provenance.yaml`). The smoke, OSPF and drift lab tests pass on them unchanged, which shows the parsers agree with that reading of the docs, not with a switch. Unit runs print this count in their header and mark those tests `documentation_samples`; `record_samples(..., provenance_root=...)` on a DSX Air simulation replaces them and updates the count.
 - NVIDIA backend, lab side: not built yet. It is specified in [`docs/requirements/nvidia-backend-requirements.md`](docs/requirements/nvidia-backend-requirements.md) and planned in [`docs/plans/2026-11-08-nvidia-backend-implementation-plan.md`](docs/plans/2026-11-08-nvidia-backend-implementation-plan.md): spikes on a real DSX Air simulation, then the Air API client, topology rendering, SSH access to devices through the `oob-mgmt-server`, NVUE snapshots, live runs with captured samples and a measured timing profile.

@@ -15,3 +15,6 @@ mutants/
 # secrets and captures never belong in git
 .env*
 *.pcap
+
+# files Claude hands over (PR descriptions, captures); never part of the repo
+Claude outputs/
