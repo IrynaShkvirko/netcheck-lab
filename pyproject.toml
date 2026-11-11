@@ -13,7 +13,7 @@ dependencies = [
 dev = [
     "mutmut>=3.8.1",
     "mypy>=1.10",
-    "ruff>=0.5",
+    "ruff>=0.17.4",
     "types-PyYAML",
     "types-requests",
 ]
