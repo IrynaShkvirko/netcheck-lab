@@ -18,4 +18,4 @@ Single-context: one `GLOSSARY.md` at the repo root, ADRs in `docs/decisions/`. S
 
 ### Mutation testing
 
-mutmut over `tests/unit` (`make mutate`), configured in `pyproject.toml`; an opt-in lab profile over `tests/lab` (`make mutate-lab GROUP=...`, `mutation/lab/`) needs a running lab and never runs in CI. Run the control first and triage survivors by behaviour. Guarded modules have a floor and an accepted-survivor list in `pyproject.toml` (`make mutation-floor`, CI `mutation` job): kill a new survivor or accept it with a reason, never lower a floor. See `.claude/skills/mutation-testing/SKILL.md`.
+mutmut over `tests/unit` (`make mutate`), configured in `pyproject.toml`; an opt-in lab profile over `tests/lab` (`make mutate-lab GROUP=...`, `mutation/lab/`) needs a running lab and never runs in CI. Run the control first and triage survivors by behaviour. Guarded modules have a floor and an accepted-survivor list in `pyproject.toml` (`make mutation-floor`, nightly `mutation` job): kill a new survivor or accept it with a reason, never lower a floor. See `.claude/skills/mutation-testing/SKILL.md`.

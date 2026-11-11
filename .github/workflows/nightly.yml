@@ -5,7 +5,7 @@ name: nightly
 # (NETCHECK_SLA_MODE=record); this job is where a slow regression fails. The measurement
 # history lives in the Actions cache, and the job summary compares tonight with earlier runs.
 # The mutation job runs every mutant and holds every guarded module to its floor
-# ([tool.mutation-floor] in pyproject.toml); pull requests mutate only the modules they can weaken.
+# ([tool.mutation-floor] in pyproject.toml). Pull requests don't run it: it takes too long.
 # Scheduled runs use the default branch.
 
 on:

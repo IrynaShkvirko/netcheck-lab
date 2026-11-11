@@ -3,8 +3,7 @@ name: ci
 # Pull requests, and master after each merge (the commit that lands on master is tested even
 # when another PR merged in between). A push to a branch without a PR runs nothing: open the
 # PR or use "Run workflow". Changes only to docs and agent files skip CI entirely; changes
-# only to unit tests and Markdown skip the lab job (scripts/lab-affected.py); the mutation
-# job runs only for the guarded modules a change can weaken (scripts/mutation-floor.py).
+# only to unit tests and Markdown skip the lab job (scripts/lab-affected.py).
 on:
   pull_request:
     paths-ignore: ["docs/**", ".claude/**", "GLOSSARY.md", "CLAUDE.md"]
@@ -55,8 +54,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       lab: ${{ steps.diff.outputs.lab }}
-      mutate: ${{ steps.diff.outputs.modules }}
-      globs: ${{ steps.diff.outputs.globs }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -65,41 +62,10 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          # no base (manual run, first push): no list, so the lab and every guarded module run
+          # no base (manual run, first push): no list, so the lab runs
           if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             git diff --name-only "$BASE" HEAD
-          fi > changed.txt
-          python3 scripts/lab-affected.py < changed.txt | tee -a "$GITHUB_OUTPUT"
-          python3 scripts/mutation-floor.py select < changed.txt | tee -a "$GITHUB_OUTPUT"
-
-  # The mutation floor ([tool.mutation-floor] in pyproject.toml): the guarded modules this change can weaken are
-  # mutated and held to their floor, and every survivor needs an accepted reason. The full
-  # run is nightly.
-  mutation:
-    needs: [checks, changes]
-    if: needs.changes.outputs.mutate != ''
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45                # every guarded module: about 2,400 mutants
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      # GitHub's downloads sometimes answer 504 for a few minutes: try uv twice
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        id: uv
-        continue-on-error: true
-      - if: steps.uv.outcome == 'failure'
-        run: sleep 60
-      - if: steps.uv.outcome == 'failure'
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-      - run: uv sync --locked
-      - env:
-          GLOBS: ${{ needs.changes.outputs.globs }}
-        run: uv run mutmut run $GLOBS
-      - env:
-          MODULES: ${{ needs.changes.outputs.mutate }}
-        run: |
-          set -o pipefail
-          uv run python scripts/mutation-floor.py check --modules $MODULES \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+          fi | python3 scripts/lab-affected.py | tee -a "$GITHUB_OUTPUT"
 
   lab:
     needs: [checks, changes]

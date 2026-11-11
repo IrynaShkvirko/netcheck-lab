@@ -454,9 +454,8 @@ make lab-up && make mutate-lab GROUP=FrrOspf   # opt-in, against the running loc
 killed, set in `[tool.mutation-floor]` in `pyproject.toml`. Every survivor in them is either
 killed or listed in `[tool.mutation-accepted]` with the reason it is safe (report wording,
 equivalent code, a path no intent can reach). `scripts/mutation-floor.py check` enforces
-both, and an accepted entry that no longer matches a survivor fails too. A pull request
-mutates the guarded modules it changes (all of them when it changes the unit tests); the
-nightly run mutates everything.
+both, and an accepted entry that no longer matches a survivor fails too. Pull requests
+don't run it, because it takes too long; the nightly run mutates everything.
 
 `GROUP` is one of `LinuxShell`, `FrrOspf`, `links-bridge`, `backend`, `all`. The lab profile
 never deploys and starts every mutant from the baseline. It never runs in CI. How to read
@@ -473,7 +472,6 @@ the PR, or use "Run workflow" in the Actions tab.
 | --- | --- | --- |
 | `checks` | unit tests on Python 3.11, 3.12, 3.13 and 3.14; ruff and mypy once, on 3.11 | the change only touches `docs/`, `.claude/`, `GLOSSARY.md`, `CLAUDE.md` |
 | `lab` | deploy, `make test-lab`, `make fault-check`, measurements summary, artifacts | also when it only touches unit tests and Markdown (`scripts/lab-affected.py`) |
-| `mutation` | mutmut on the guarded modules the change can weaken, held to the floor | when it touches none of them and no unit test (`scripts/mutation-floor.py select`) |
 
 `.github/workflows/nightly.yml` gates the SLAs (see Timing) and runs every mutant against the
 floor (see Mutation testing). Every job has a timeout,
