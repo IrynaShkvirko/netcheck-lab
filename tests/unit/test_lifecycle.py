@@ -225,7 +225,7 @@ def test_reset_on_start_that_cannot_restore_raises(fake, monkeypatch) -> None:  
 def test_missing_ports_checks_every_device_after_one_without_links(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """A device with no Links capability is skipped, not the end of the check: a lost port
     on any later device still counts."""
-    from netcheck.capabilities import Links
+    from netcheck.model.capabilities import Links
 
     lab, _ = fake
     assert lab.backend.missing_ports() == []

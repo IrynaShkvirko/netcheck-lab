@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from netcheck.capabilities import Bridge, Links, Ospf, Shell, Snapshot
-from netcheck.device import Device
-from netcheck.devicelog import DeviceLog
-from netcheck.intent import Intent
-from netcheck.ports import PortMap
+from netcheck.devices.device import Device
+from netcheck.devices.devicelog import DeviceLog
+from netcheck.model.capabilities import Bridge, Links, Ospf, Shell, Snapshot
+from netcheck.model.intent import Intent
+from netcheck.model.ports import PortMap
 
 # Capabilities each role may have; Snapshot comes last because it is built from the others.
 ROLE_CAPABILITIES: dict[str, tuple[type, ...]] = {

@@ -128,7 +128,7 @@ jobs:
         run: make lab-up
       - run: make test-lab
       # every demo fault must turn the tests it declares red, and the reset must turn them
-      # green again (netcheck/faults.py, netcheck/faultcheck.py); reports in artifacts/fault-check
+      # green again (netcheck/faults/catalog.py, netcheck/faults/check.py); reports in artifacts/fault-check
       - run: make fault-check
       - name: Measurements in the job summary
         if: always() && steps.up.outcome == 'success'

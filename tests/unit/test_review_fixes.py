@@ -8,11 +8,11 @@ import pytest
 
 from netcheck.assertions import assert_isolated, assert_route_uses
 from netcheck.backends.local import LinuxShell
-from netcheck.capabilities import OspfNeighbor, PingResult, PortVlans, Route
-from netcheck.devicelog import DeviceLog
-from netcheck.ports import PortMap
-from netcheck.report import IntentViolation
-from netcheck.transport.base import CommandResult
+from netcheck.devices.devicelog import DeviceLog
+from netcheck.devices.transport.base import CommandResult
+from netcheck.model.capabilities import OspfNeighbor, PingResult, PortVlans, Route
+from netcheck.model.ports import PortMap
+from netcheck.run.report import IntentViolation
 
 from .fakes_local import ScriptedTransport
 
@@ -113,7 +113,7 @@ def test_first_run_without_baseline_takes_one(fake) -> None:  # type: ignore[no-
 def test_prune_snapshots_keeps_baseline(tmp_path) -> None:  # type: ignore[no-untyped-def]
     import os
 
-    from netcheck.labstate import LabState
+    from netcheck.backends.labstate import LabState
 
     state = LabState(tmp_path)
     state.snapshots.mkdir(parents=True)
@@ -134,8 +134,8 @@ import sys
 sys.path.insert(0, {repo!r})
 from pathlib import Path
 import pytest
-from netcheck.intent import load_intent
-from netcheck.lab import set_current
+from netcheck.model.intent import load_intent
+from netcheck.run.lab import set_current
 from tests.unit.fakes import build_fake_lab
 
 @pytest.fixture(scope="session")
@@ -221,7 +221,7 @@ def test_parallel_workers_are_refused(pytester, monkeypatch) -> None:  # type: i
 
 def test_evidence_failure_keeps_the_verdict(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from netcheck.assertions import assert_ospf_neighbor_full
-    from netcheck.transport.base import TransportError as TE
+    from netcheck.devices.transport.base import TransportError as TE
 
     lab, parts = fake
     # r2 is unreachable: its neighbor table cannot be read for the report
@@ -237,7 +237,7 @@ def test_evidence_failure_keeps_the_verdict(fake, monkeypatch) -> None:  # type:
 
 
 def test_missing_ospf_fault_goes_through_the_capability(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.faults import missing_ospf_network
+    from netcheck.faults.catalog import missing_ospf_network
 
     lab, parts = fake
     msg = missing_ospf_network(lab.backend)
@@ -268,7 +268,7 @@ def test_same_area_accepts_both_frr_formats() -> None:
 
 
 def test_intent_validation_catches_bad_values(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.intent import IntentError, load_intent
+    from netcheck.model.intent import IntentError, load_intent
 
     (tmp_path / "bad.yaml").write_text(
         """
@@ -353,7 +353,7 @@ def test_device_log_is_bounded_and_marks_stay_valid() -> None:
 
 
 def test_api_bodies_are_redacted_in_logs() -> None:
-    from netcheck.transport.nvue_rest import redact
+    from netcheck.devices.transport.nvue_rest import redact
 
     body = {
         "system": {"hostname": "sw1", "api": {"password": "hunter2", "port": 8765}},
@@ -372,10 +372,10 @@ import sys
 sys.path.insert(0, {repo!r})
 from pathlib import Path
 import pytest
-from netcheck.intent import load_intent
-from netcheck.lab import set_current
-from netcheck.capabilities import PortVlans
-from netcheck.faults import FAULTS
+from netcheck.model.intent import load_intent
+from netcheck.run.lab import set_current
+from netcheck.model.capabilities import PortVlans
+from netcheck.faults.catalog import FAULTS
 from tests.unit.fakes import build_fake_lab, make_healthy
 
 @pytest.fixture(scope="session")
@@ -387,7 +387,7 @@ def lab(tmp_path_factory):
         switch, _, port = where.rpartition(":")
         bridge = parts["bridge_" + switch] if switch else parts["bridge"]
         bridge.ports[port] = PortVlans("access", (vlan,))
-    for name in {faults!r}:  # faults from netcheck.faults, as `netcheck fault` injects them
+    for name in {faults!r}:  # faults from netcheck.faults.catalog, as `netcheck fault` injects them
         FAULTS[name].apply(the_lab.backend)
     the_lab.timing.repeats = {repeats!r}  # NETCHECK_REPEATS
     for host, lost in {lost_per_stream!r}.items():  # probes each ping stream loses, in order
@@ -503,7 +503,7 @@ def test_failure_report_names_the_failed_step(pytester) -> None:  # type: ignore
 
 
 def test_step_records_outcome_and_order(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.steps import step
+    from netcheck.run.steps import step
 
     lab, _ = fake
     with step("first"):
@@ -577,7 +577,7 @@ def test_interface_settings_mismatch_is_reported_per_port(fake) -> None:  # type
 
 
 def test_soft_step_records_the_failure_and_the_test_goes_on(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.steps import step
+    from netcheck.run.steps import step
 
     lab, _ = fake
     reached = []
@@ -601,7 +601,7 @@ def test_soft_step_records_the_failure_and_the_test_goes_on(fake) -> None:  # ty
 
 
 def test_soft_step_still_stops_on_errors_that_are_not_check_failures(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.steps import step
+    from netcheck.run.steps import step
 
     lab, _ = fake
     with pytest.raises(ConnectionError), step("read the switch", continue_on_failure=True):
@@ -611,7 +611,7 @@ def test_soft_step_still_stops_on_errors_that_are_not_check_failures(fake) -> No
 
 
 def test_no_soft_failures_means_no_report(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.steps import step
+    from netcheck.run.steps import step
 
     lab, _ = fake
     with step("fine", continue_on_failure=True):

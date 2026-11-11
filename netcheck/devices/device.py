@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import cast
 
-from netcheck.capabilities import Bridge, Links, Ospf, Shell, Snapshot
-from netcheck.devicelog import DeviceLog
-from netcheck.ports import PortMap
+from netcheck.devices.devicelog import DeviceLog
+from netcheck.model.capabilities import Bridge, Links, Ospf, Shell, Snapshot
+from netcheck.model.ports import PortMap
 
 
 class CapabilityMissing(LookupError):

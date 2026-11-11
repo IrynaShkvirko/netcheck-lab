@@ -5,16 +5,16 @@ from __future__ import annotations
 import pytest
 
 from netcheck.assertions.common import ospf_neighbor_lines
-from netcheck.capabilities import PingResult, Route
-from netcheck.convergence import measure_reconvergence, outage_seconds
-from netcheck.report import IntentViolation
-from netcheck.timing import Threshold, Timing
-from netcheck.transport.base import TransportError
+from netcheck.assertions.convergence import measure_reconvergence, outage_seconds
+from netcheck.devices.transport.base import TransportError
+from netcheck.model.capabilities import PingResult, Route
+from netcheck.run.report import IntentViolation
+from netcheck.run.timing import Threshold, Timing
 
 
 @pytest.fixture
 def no_sleep(monkeypatch):  # type: ignore[no-untyped-def]
-    import netcheck.convergence as convergence
+    import netcheck.assertions.convergence as convergence
 
     monkeypatch.setattr(convergence.time, "sleep", lambda _: None)
 
@@ -48,8 +48,8 @@ def test_measures_both_planes_and_observes_control_plane_and_resolution(fake, no
 def test_outage_uses_the_interval_the_stream_really_achieved() -> None:
     """On a busy machine ping sends slower than asked: 300 probes over 5.98 s is one every
     20 ms, not 10, so 10 lost probes are 0.2 s of outage, not 0.1."""
-    from netcheck.capabilities import PingResult
-    from netcheck.convergence import outage_seconds, stream_interval
+    from netcheck.assertions.convergence import outage_seconds, stream_interval
+    from netcheck.model.capabilities import PingResult
 
     slow = PingResult("h1", "stream", 300, 290, elapsed_s=5.98)
     assert stream_interval(slow, 0.01) == pytest.approx(0.02)

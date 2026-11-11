@@ -14,9 +14,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
 from netcheck.backends.base import Backend
-from netcheck.capabilities import (
+from netcheck.devices.assembly import CapabilityFactory, DeviceSpec, assemble
+from netcheck.devices.device import Device
+from netcheck.devices.transport.base import CommandResult, CommandTransport, TransportError
+from netcheck.devices.transport.docker_exec import DockerExecTransport
+from netcheck.model.capabilities import (
     Bridge,
     CaptureHandle,
     Links,
@@ -30,11 +33,8 @@ from netcheck.capabilities import (
     Shell,
     Snapshot,
 )
-from netcheck.device import Device
-from netcheck.ports import PortMap
-from netcheck.render import BRIDGE, render
-from netcheck.transport.base import CommandResult, CommandTransport, TransportError
-from netcheck.transport.docker_exec import DockerExecTransport
+from netcheck.model.ports import PortMap
+from netcheck.model.render import BRIDGE, render
 
 _PING = re.compile(r"(\d+) packets transmitted, (\d+) (?:packets )?received")
 _PING_TIME = re.compile(r"packet loss, time (\d+)ms")  # iputils; BusyBox prints no time

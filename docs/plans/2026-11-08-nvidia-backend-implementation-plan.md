@@ -35,7 +35,7 @@ NvidiaAirBackend (Backend)                      .netcheck/nvidia/simulation.json
                                 over NvueRestTransport -> 127.0.0.1:<tunnel port>
                  switch shell, host links/shell/snapshot: LinuxShell | LinuxLinks |
                                 LocalSnapshot over SshTransport
-OobAccess (transport/ssh.py)
+OobAccess (devices/transport/ssh.py)
   laptop --ssh--> <worker_fqdn>:<worker_port> (Air SSH service) = oob-mgmt-server
          --ssh -J--> cumulus@r1 / ubuntu@h1     (shell commands, scp)
          --ssh -J -L 127.0.0.1:N:127.0.0.1:8765--> cumulus@sw1   (NVUE tunnel)
@@ -59,10 +59,10 @@ Design choices this plan commits to (each recorded in ADR-0007, task 4.4):
 
 ### Files to create
 
-- `netcheck/transport/rest.py`: `RestTransport` (shared HTTP + logging + redaction), auth by basic or Bearer
+- `netcheck/devices/transport/rest.py`: `RestTransport` (shared HTTP + logging + redaction), auth by basic or Bearer
 - `netcheck/backends/air_api.py`: `AirApi`, `AirError`, simulation states
 - `netcheck/backends/air_topology.py`: intent -> Air topology JSON and per-device NVUE config (pure)
-- `netcheck/transport/ssh.py`: `SshEndpoint`, `SshTransport`, `SshTunnel`, `OobAccess`
+- `netcheck/devices/transport/ssh.py`: `SshEndpoint`, `SshTransport`, `SshTunnel`, `OobAccess`
 - `tests/unit/fakes_air.py`: `FakeAirTransport`
 - `tests/unit/test_air_api.py`, `test_air_topology.py`, `test_ssh_transport.py`,
   `test_nvue_snapshot.py`, `test_nvidia_backend.py`
@@ -71,8 +71,8 @@ Design choices this plan commits to (each recorded in ADR-0007, task 4.4):
 
 ### Files to modify
 
-- `netcheck/transport/nvue_rest.py`: becomes a thin `RestTransport` with basic auth
-- `netcheck/assembly.py`: port prefix per role
+- `netcheck/devices/transport/nvue_rest.py`: becomes a thin `RestTransport` with basic auth
+- `netcheck/devices/assembly.py`: port prefix per role
 - `netcheck/backends/nvidia_air.py`: `lsdb_prefixes`, 5.11+ routes if needed, `NvueSnapshot`,
   `NvidiaFactory` (hosts, switch shell), `NvidiaAirBackend` lifecycle
 - `backends.yaml`, `timing.yaml`, `Makefile` (only if a target needs it), `README.md`,
@@ -145,7 +145,7 @@ the only shared file is `pyproject.toml` (no change expected).
 
 #### Task A1: extract `RestTransport`
 
-**Files:** `netcheck/transport/rest.py` (new), `netcheck/transport/nvue_rest.py`
+**Files:** `netcheck/devices/transport/rest.py` (new), `netcheck/devices/transport/nvue_rest.py`
 
 1. Move `SECRET_WORDS`, `redact` and the body of `NvueRestTransport.request` into
    `RestTransport(base_url, log, *, auth=None, headers=None, verify_tls=True, timeout=15.0)`.
@@ -158,7 +158,7 @@ the only shared file is `pyproject.toml` (no change expected).
 
 **Verification:**
 - [ ] `uv run pytest tests/unit -q` passes unchanged
-- [ ] `grep -n "requests" netcheck/transport/nvue_rest.py` finds nothing (only `rest.py` imports it)
+- [ ] `grep -n "requests" netcheck/devices/transport/nvue_rest.py` finds nothing (only `rest.py` imports it)
 
 #### Task A2: `AirApi` with a fake transport
 
@@ -207,7 +207,7 @@ the only shared file is `pyproject.toml` (no change expected).
 
 #### Task B1: port prefix per role in the assembly
 
-**File:** `netcheck/assembly.py`, `tests/unit/test_assembly.py`
+**File:** `netcheck/devices/assembly.py`, `tests/unit/test_assembly.py`
 
 1. `assemble(intent, backend, prefix, factory)` accepts `prefix: str | Mapping[str, str]`; a
    mapping is looked up by role (`{"router": "swp", "switch": "swp", "host": "eth"}`). A `str`
@@ -279,7 +279,7 @@ the only shared file is `pyproject.toml` (no change expected).
 
 #### Task C1: `SshTransport`
 
-**Files:** `netcheck/transport/ssh.py` (new), `tests/unit/test_ssh_transport.py` (new)
+**Files:** `netcheck/devices/transport/ssh.py` (new), `tests/unit/test_ssh_transport.py` (new)
 
 1. ```python
    @dataclass(frozen=True)
@@ -316,7 +316,7 @@ the only shared file is `pyproject.toml` (no change expected).
 
 #### Task C2: `SshTunnel` and `OobAccess`
 
-**Files:** `netcheck/transport/ssh.py`, `tests/unit/test_ssh_transport.py`
+**Files:** `netcheck/devices/transport/ssh.py`, `tests/unit/test_ssh_transport.py`
 
 1. `SshTunnel(ep, user, host, remote_port=8765, *, popen=subprocess.Popen, connect=socket.create_connection)`:
    `open()` picks a free local port (bind `127.0.0.1:0`, read it, close), starts
@@ -466,7 +466,7 @@ the only shared file is `pyproject.toml` (no change expected).
       tunnel for routers and switches), polling inside `device_ready`.
    7. Push config: for each router/switch, `apply_changes(t, [("PATCH", "", nvue_*_config(...))])`
       (merge, REQ-5 design note). For each host, run `host_exec(intent, host, prefix)` commands
-      (from `netcheck/render.py`, reused) through its `SshTransport` with sudo.
+      (from `netcheck/model/render.py`, reused) through its `SshTransport` with sudo.
 2. `destroy()`: no record -> return; `AirApi.delete(id)`; `OobAccess.close_all()`; `AirRecord.forget()`.
 3. Tests over `FakeAirTransport`, `FakeNvueTransport` and `ScriptedTransport` (inject the three
    openers): call order import -> expiry -> start -> waits -> config; an INVALID import raises
@@ -560,9 +560,9 @@ the only shared file is `pyproject.toml` (no change expected).
 
 | Track | Tasks | Files owned | Can run with |
 | --- | --- | --- | --- |
-| A | A1, A2 | `transport/rest.py`, `transport/nvue_rest.py`, `backends/air_api.py`, `fakes_air.py`, `test_air_api.py` | B, C, D, E |
-| B | B1, B2, B3 | `assembly.py`, `backends/air_topology.py`, `test_assembly.py`, `test_air_topology.py` | A, C, D, E |
-| C | C1, C2 | `transport/ssh.py`, `test_ssh_transport.py` | A, B, D, E |
+| A | A1, A2 | `devices/transport/rest.py`, `devices/transport/nvue_rest.py`, `backends/air_api.py`, `fakes_air.py`, `test_air_api.py` | B, C, D, E |
+| B | B1, B2, B3 | `devices/assembly.py`, `backends/air_topology.py`, `test_assembly.py`, `test_air_topology.py` | A, C, D, E |
+| C | C1, C2 | `devices/transport/ssh.py`, `test_ssh_transport.py` | A, B, D, E |
 | D | D1, D2, D3 | `backends/nvidia_air.py` (device side), `fakes_nvue.py`, `test_nvue*.py` | A, B, C |
 | E | E1 | `backends.yaml`, `AirRecord` in `nvidia_air.py`, `test_nvidia_backend.py` | A, B, C (after D, both edit `nvidia_air.py`) |
 

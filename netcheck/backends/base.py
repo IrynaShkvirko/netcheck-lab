@@ -10,10 +10,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from netcheck.capabilities import Links, Snapshot
-from netcheck.device import Device
-from netcheck.intent import Intent
-from netcheck.labstate import LabState
+from netcheck.backends.labstate import LabState
+from netcheck.devices.device import Device
+from netcheck.model.capabilities import Links, Snapshot
+from netcheck.model.intent import Intent
 
 # Version of the snapshot file layout; older files are refused (ADR-0003).
 SNAPSHOT_FORMAT = 2
@@ -121,7 +121,7 @@ class Backend(ABC):
     def inject_fault(self, name: str) -> str:
         """Break one intent on purpose and record it in the fault ledger; returns what
         was changed. `reset()` to the baseline removes it again."""
-        from netcheck.faults import FAULTS  # faults drive a Backend: import late
+        from netcheck.faults.catalog import FAULTS  # faults drive a Backend: import late
 
         description = FAULTS[name].apply(self)
         self.state.add_fault(name, description)

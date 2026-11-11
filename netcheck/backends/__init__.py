@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from netcheck.backends.base import Backend
-from netcheck.intent import Intent
+from netcheck.model.intent import Intent
 
 
 def get_backend(name: str, intent: Intent, root: Path) -> Backend:

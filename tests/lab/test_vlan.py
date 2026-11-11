@@ -14,8 +14,8 @@ from netcheck.assertions import (
     send_isolation_probes,
     start_capture,
 )
-from netcheck.lab import Lab
-from netcheck.steps import step
+from netcheck.run.lab import Lab
+from netcheck.run.steps import step
 
 pytestmark = pytest.mark.functional
 

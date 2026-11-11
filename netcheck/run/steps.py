@@ -24,8 +24,8 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from netcheck.lab import current
-from netcheck.testrun import StepRecord, failure_summary
+from netcheck.run.lab import current
+from netcheck.run.testrun import StepRecord, failure_summary
 
 log = logging.getLogger("netcheck.steps")
 

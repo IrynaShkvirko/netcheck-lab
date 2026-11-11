@@ -15,9 +15,9 @@ from netcheck.assertions.common import (
     finish_capture,
     start_capture,
 )
-from netcheck.capabilities import CaptureHandle
-from netcheck.report import FailureReport
-from netcheck.transport.base import TransportError
+from netcheck.devices.transport.base import TransportError
+from netcheck.model.capabilities import CaptureHandle
+from netcheck.run.report import FailureReport
 
 
 @pytest.mark.parametrize(

@@ -5,9 +5,9 @@ import statistics
 import pytest
 
 from netcheck.assertions import assert_route_uses
-from netcheck.convergence import measure_reconvergence
-from netcheck.lab import Lab
-from netcheck.steps import step
+from netcheck.assertions.convergence import measure_reconvergence
+from netcheck.run.lab import Lab
+from netcheck.run.steps import step
 
 pytestmark = pytest.mark.resilience
 

@@ -5,7 +5,7 @@ reads render's output back the way the device would (FRR config through the loca
 backend's parser, switch commands through a small model of the Linux bridge, host and
 router commands through what iproute2 does with them) and compares the result with the
 intent or with Expected. The models are written from kernel and iproute2 behaviour, not
-from render.py, so a render bug and a matching Expected bug cannot both hide here.
+from model/render.py, so a render bug and a matching Expected bug cannot both hide here.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from typing import Any
 import pytest
 
 from netcheck.backends.local import frr_sections, parse_bridge_vlans, parse_frr_interfaces
-from netcheck.expected import Expected
-from netcheck.intent import Intent, load_intent
-from netcheck.ports import PortMap
-from netcheck.render import BRIDGE, frr_config, host_exec, router_exec, switch_exec
+from netcheck.model.expected import Expected
+from netcheck.model.intent import Intent, load_intent
+from netcheck.model.ports import PortMap
+from netcheck.model.render import BRIDGE, frr_config, host_exec, router_exec, switch_exec
 
 from .intents import INTENT_FILES, intent_id
 

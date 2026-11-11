@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 
-from netcheck.intent import Intent
+from netcheck.model.intent import Intent
 
 
 def port_name(logical: str, prefix: str) -> str:

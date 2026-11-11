@@ -5,8 +5,8 @@ from __future__ import annotations
 import subprocess
 import time
 
-from netcheck.devicelog import DeviceLog
-from netcheck.transport.base import CommandResult, TransportError
+from netcheck.devices.devicelog import DeviceLog
+from netcheck.devices.transport.base import CommandResult, TransportError
 
 
 class DockerExecTransport:

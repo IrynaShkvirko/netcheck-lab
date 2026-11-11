@@ -290,13 +290,13 @@ html { scroll-behavior: smooth; }
     <div class="flow">
       <div class="f"><b>Intent</b><span class="mono">intent/lab.yaml</span>
         <p>Nodes, links, VLANs, OSPF timers, and the promises: which hosts reach each other, which stay isolated.</p></div>
-      <div class="f"><b>Build</b><span class="mono">render.py · expected.py</span>
+      <div class="f"><b>Build</b><span class="mono">model/render.py · model/expected.py</span>
         <p>Topology and device configs, plus the expected state: VLANs per port, adjacencies per link, routes per router.</p></div>
-      <div class="f"><b>Deploy</b><span class="mono">backends/ · labstate.py</span>
+      <div class="f"><b>Deploy</b><span class="mono">backends/ · backends/labstate.py</span>
         <p>Brings the lab up once per session and saves a baseline snapshot right after a real deploy.</p></div>
-      <div class="f"><b>Test</b><span class="mono">tests/lab · steps.py</span>
+      <div class="f"><b>Test</b><span class="mono">tests/lab · run/steps.py</span>
         <p>Cases generated from the intent. Every test runs between a snapshot and a restore.</p></div>
-      <div class="f"><b>Explain</b><span class="mono">report.py · artifacts/</span>
+      <div class="f"><b>Explain</b><span class="mono">run/report.py · artifacts/</span>
         <p>Verdict, expected vs actual, the drifted setting, evidence, packet capture, repro command.</p></div>
     </div>
     <div class="claims">
@@ -314,21 +314,21 @@ html { scroll-behavior: smooth; }
     <div class="arch-grid">
       <div class="panel arch" id="arch">
         <div class="row"><div class="lane">Source</div><div class="cells">
-          <button class="blk" type="button" data-blk="intent"><b>Intent</b><span>intent.py</span></button>
-          <button class="blk" type="button" data-blk="expected"><b>Expected state</b><span>expected.py</span></button>
+          <button class="blk" type="button" data-blk="intent"><b>Intent</b><span>model/intent.py</span></button>
+          <button class="blk" type="button" data-blk="expected"><b>Expected state</b><span>model/expected.py</span></button>
         </div></div>
         <div class="row"><div class="lane">Tests</div><div class="cells">
-          <button class="blk" type="button" data-blk="tests"><b>Lab tests</b><span>tests/lab · steps.py</span></button>
+          <button class="blk" type="button" data-blk="tests"><b>Lab tests</b><span>tests/lab · run/steps.py</span></button>
         </div></div>
         <div class="row"><div class="lane">Checks</div><div class="cells">
           <button class="blk" type="button" data-blk="assertions"><b>Domain assertions</b><span>assertions/</span></button>
-          <button class="blk" type="button" data-blk="report"><b>Failure report</b><span>report.py</span></button>
+          <button class="blk" type="button" data-blk="report"><b>Failure report</b><span>run/report.py</span></button>
         </div></div>
         <div class="row"><div class="lane">Lifecycle</div><div class="cells">
-          <button class="blk" type="button" data-blk="lifecycle"><b>Test run</b><span>pytest_plugin.py · testrun.py · cleanup.py</span></button>
+          <button class="blk" type="button" data-blk="lifecycle"><b>Test run</b><span>pytest_plugin.py · run/testrun.py · run/cleanup.py</span></button>
         </div></div>
         <div class="row"><div class="lane">Capabilities</div><div class="cells">
-          <button class="blk" type="button" data-blk="caps"><b>Ospf · Bridge · Links · Shell · Snapshot</b><span>capabilities.py · assembly.py · ports.py</span></button>
+          <button class="blk" type="button" data-blk="caps"><b>Ospf · Bridge · Links · Shell · Snapshot</b><span>model/capabilities.py · devices/assembly.py · model/ports.py</span></button>
         </div></div>
         <div class="row"><div class="lane">Backends</div><div class="cells">
           <button class="blk local" type="button" data-blk="local"><b>Local</b><span>docker exec · FRR · Linux bridge</span></button>
@@ -336,8 +336,8 @@ html { scroll-behavior: smooth; }
         </div></div>
         <div class="row"><div class="lane">Cross-cutting</div><div class="cells">
           <button class="blk side" type="button" data-blk="timing"><b>Timing</b><span>timing.yaml</span></button>
-          <button class="blk side" type="button" data-blk="logs"><b>Device log</b><span>devicelog.py</span></button>
-          <button class="blk side" type="button" data-blk="faults"><b>Faults</b><span>faults.py</span></button>
+          <button class="blk side" type="button" data-blk="logs"><b>Device log</b><span>devices/devicelog.py</span></button>
+          <button class="blk side" type="button" data-blk="faults"><b>Faults</b><span>faults/catalog.py</span></button>
         </div></div>
       </div>
       <div class="panel stack" id="blk-detail" aria-live="polite"></div>
@@ -408,7 +408,7 @@ html { scroll-behavior: smooth; }
       <p class="note">Each lab test is written as named steps. Pick a test and step through what happens at each layer. The backend switch in section 3 changes the commands shown.</p></div>
     <div class="layers" id="layers">
       <div class="layer" data-layer="intent"><b>Intent</b><span>lab.expected</span></div>
-      <div class="layer" data-layer="lifecycle"><b>Lifecycle</b><span>testrun.py</span></div>
+      <div class="layer" data-layer="lifecycle"><b>Lifecycle</b><span>run/testrun.py</span></div>
       <div class="layer" data-layer="assertion"><b>Assertion</b><span>assertions/</span></div>
       <div class="layer" data-layer="capability"><b>Capability</b><span>Ospf · Bridge · Links · Shell</span></div>
       <div class="layer" data-layer="transport"><b>Transport</b><span id="layer-transport">docker exec</span></div>
@@ -552,7 +552,7 @@ Restore state: python -m netcheck restore &lt;id&gt;</pre>
         <div><button class="copy" type="button" data-copy="repl-clean">Copy</button>
 <pre id="repl">uv run python
 >>> from pathlib import Path
->>> from netcheck.intent import load_intent
+>>> from netcheck.model.intent import load_intent
 >>> from netcheck.backends import get_backend
 >>> lab = get_backend("local", load_intent("intent/lab.yaml"), Path("."))
 >>> devs = lab.devices()
@@ -563,7 +563,7 @@ Restore state: python -m netcheck restore &lt;id&gt;</pre>
 PortVlans(mode='access', vlans=(20,))
 >>> devs["r1"].log.summary()   # every command that ran</pre></div>
 <pre id="repl-clean" hidden>from pathlib import Path
-from netcheck.intent import load_intent
+from netcheck.model.intent import load_intent
 from netcheck.backends import get_backend
 lab = get_backend("local", load_intent("intent/lab.yaml"), Path("."))
 devs = lab.devices()
@@ -579,40 +579,40 @@ devs["r1"].log.summary()</pre>
 <script>
 /* ---------- 2: components ---------- */
 const BLOCKS = {
-  intent: { t: "Intent", files: "intent/lab.yaml · netcheck/intent.py", status: "done",
+  intent: { t: "Intent", files: "intent/lab.yaml · netcheck/model/intent.py", status: "done",
     p: "The single source of truth: nodes and roles, links with logical ports (p1, p2), VLANs, OSPF settings, and the expectations (reachable pairs, isolated pairs). Loading validates everything and lists every problem at once.",
     pts: ["Logical ports keep the intent backend-neutral: p1 is eth1 locally and swp1 on Cumulus.", "Changing the intent changes the lab, the configs and the test cases together."] },
-  expected: { t: "Expected state", files: "netcheck/expected.py", status: "done",
+  expected: { t: "Expected state", files: "netcheck/model/expected.py", status: "done",
     p: "Answers questions about the intent in the same types the capabilities return: VLAN membership per switch port, OSPF adjacencies per link, routes per router, the failover plan, host attachments. Also written to expected_state.json.",
     pts: ["Tests compare like with like: PortVlans against PortVlans.", "Parametrization comes from here: 4 adjacency cases because r1 and r2 share two links."] },
-  tests: { t: "Lab tests", files: "tests/lab/*.py · netcheck/steps.py", status: "done",
+  tests: { t: "Lab tests", files: "tests/lab/*.py · netcheck/run/steps.py", status: "done",
     p: "16 tests in four markers: smoke, functional, resilience, drift. Each is a list of named steps. Soft steps (continue_on_failure=True) check independent items, such as every switch port, and report all failures at the end.",
     pts: ["No hard-coded names or addresses: everything comes from lab.expected.", "Soft steps are the one idea borrowed from pyATS (ADR-0006)."] },
   assertions: { t: "Domain assertions", files: "netcheck/assertions/ (l2, ospf, reachability, common)", status: "done",
     p: "assert_isolated, assert_ospf_neighbor_full, assert_route_present, check_port_vlans and others. They poll where the network needs time, collect evidence before deciding, and raise an IntentViolation carrying a FailureReport.",
     pts: ["Polling with timeouts from timing.yaml, never fixed sleeps.", "They separate causes: 'adjacency down' vs 'adjacency Full but prefix not advertised'."] },
-  report: { t: "Failure report", files: "netcheck/report.py", status: "done",
+  report: { t: "Failure report", files: "netcheck/run/report.py", status: "done",
     p: "Eight parts: verdict, expected/actual, intent-vs-live drift, evidence, capture, commands, environment, repro. Rendered to the console, report.txt and report.json, and JUnit XML.",
     pts: ["Evidence collection is guarded: if it fails, the report says so instead of hiding the verdict."] },
-  lifecycle: { t: "Test run", files: "pytest_plugin.py · testrun.py · cleanup.py · labstate.py", status: "done",
+  lifecycle: { t: "Test run", files: "pytest_plugin.py · run/testrun.py · run/cleanup.py · backends/labstate.py", status: "done",
     p: "The lab is deployed once per session. Each test gets a TestRun: snapshot before, a LIFO cleanup registry for its own changes, restore after. If the restore fails the run stops with exit code 3, so later tests can't be blamed for a broken lab.",
     pts: ["Baseline only after a real deploy, so a leftover fault can never become the baseline.", "Lab tests refuse pytest-xdist: one lab, run serially."] },
-  caps: { t: "Capabilities", files: "capabilities.py · assembly.py · ports.py · device.py", status: "done",
+  caps: { t: "Capabilities", files: "model/capabilities.py · devices/assembly.py · model/ports.py · devices/device.py", status: "done",
     p: "A Device holds capabilities: Ospf, Bridge, Links, Shell, Snapshot. They return normalized types (OspfNeighbor, Route, PortVlans, LinkState, PingResult). One table says which role may have which capability; each backend provides what it can.",
     pts: ["Composition, not inheritance: a router is just a device with Links, Ospf and Snapshot.", "A test needing a capability a backend lacks is skipped, not failed."] },
-  local: { t: "Local backend", files: "backends/local.py · transport/docker_exec.py · render.py", status: "done",
+  local: { t: "Local backend", files: "backends/local.py · devices/transport/docker_exec.py · model/render.py", status: "done",
     p: "Containerlab with FRR routers, a Linux-bridge switch and Linux hosts. Commands run with docker exec and answer in JSON (vtysh json, ip -j, bridge -j). Snapshots cover links, FRR config, switch VLANs and host routes; restores apply only differences and verify them.",
     pts: ["Runs on a laptop (OrbStack VM on a Mac) and in GitHub Actions.", "Detects a degraded lab (containers restarted, links lost) and redeploys."] },
-  nvidia: { t: "NVIDIA backend", files: "backends/nvidia_air.py · transport/nvue_rest.py", status: "partial",
+  nvidia: { t: "NVIDIA backend", files: "backends/nvidia_air.py · devices/transport/nvue_rest.py", status: "partial",
     p: "Cumulus Linux on NVIDIA DSX Air over the NVUE REST API. Built: parsers for OSPF neighbors, routes and interface settings, bridge VLANs and links, and config changes through the NVUE revision flow (create, patch, apply, wait). Planned: creating the simulation, SSH through the oob-mgmt-server, revision snapshots.",
     pts: ["Parsers are strict: an unknown response shape raises instead of returning 'no routes'.", "pyATS/Genie was considered: it has no FRR, Cumulus or NVUE parsers (ADR-0006)."] },
-  timing: { t: "Timing", files: "timing.yaml · netcheck/timing.py · convergence.py", status: "done",
+  timing: { t: "Timing", files: "timing.yaml · netcheck/run/timing.py · assertions/convergence.py", status: "done",
     p: "A timeout and an SLA per check and per backend, derived from protocol timers (dead_interval + 2). Failover outage is measured with a 10 ms ping stream: lost packets × interval (RFC 6413).",
     pts: ["NETCHECK_TIME_FACTOR scales timeouts; NETCHECK_SLA_MODE=record turns SLA breaches into warnings on CI."] },
-  logs: { t: "Device log", files: "netcheck/devicelog.py · transport/", status: "done",
+  logs: { t: "Device log", files: "netcheck/devices/devicelog.py · devices/transport/", status: "done",
     p: "Every transport call is logged per device with its command, return code, duration and trimmed reply. A failed test's report includes only its own calls; the full log goes to artifacts/<test>/logs/.",
     pts: ["Secrets are redacted in NVUE requests."] },
-  faults: { t: "Faults", files: "netcheck/faults.py · Makefile", status: "done",
+  faults: { t: "Faults", files: "netcheck/faults/catalog.py · Makefile", status: "done",
     p: "Two demo faults, each breaking exactly one intent: wrong-vlan moves h3's port into VLAN 10; missing-ospf-network takes r2's LAN out of OSPF while adjacencies stay Full.",
     pts: ["Every pytest run warns in its header while a fault is applied, until make lab-reset."] },
 };
@@ -742,7 +742,7 @@ const RESTORE = (what) => ({
   p: `The cleanup registry undoes the test's own changes, newest first (${what}). Then the snapshot is compared with the live lab and only the differences are put back, and verified. If the restore fails, the run stops with exit code 3.`,
   code: { local: "run.end():\n  cleanup.run()           # LIFO undo\n  backend.restore(snap)   # diff, apply, verify",
           nvidia: "run.end():\n  cleanup.run()           # each undo is an NVUE revision\n  backend.restore(snap)   # planned: re-apply the saved revision" },
-  where: "testrun.py · TestRun.end → TeardownOutcome"
+  where: "run/testrun.py · TestRun.end → TeardownOutcome"
 });
 
 const SCENARIOS = [
@@ -757,7 +757,7 @@ const SCENARIOS = [
       { t: "Where are the two hosts attached?", layer: "intent", step: 1, nodes: ["h1","h3","sw1"], links: ["h1-sw1","h3-sw1"],
         p: "<code>lab.expected.attachment()</code> returns each host's switch, port and VLAN: h1 on sw1:p1 in VLAN 10, h3 on sw1:p3 in VLAN 20.",
         code: "Attachment(switch='sw1', port='p1', vlan=10)   # h1\nAttachment(switch='sw1', port='p3', vlan=20)   # h3",
-        where: "netcheck/expected.py · Expected.attachment" },
+        where: "netcheck/model/expected.py · Expected.attachment" },
       { t: "Force the question onto layer 2", layer: "capability", step: 2, nodes: ["h1","h3"], links: [],
         p: "Without this the test could pass for the wrong reason: h1 would send to its gateway r1, which has no route to VLAN 20. On-link routes and empty ARP caches mean a reply can only come from the same broadcast domain. Each route is registered for cleanup the moment it is added.",
         code: { local: "ip route replace 10.0.20.13/32 dev eth1 scope link   # h1\nip neigh flush dev eth1\ncleanup.register('remove on-link route ...', undo)",
@@ -789,7 +789,7 @@ const SCENARIOS = [
       { t: "One case per link, not per router pair", layer: "intent", step: 1, nodes: ["r1","r2"], links: ["primary","backup"],
         p: "<code>Expected.adjacencies()</code> walks the routed links. r1 and r2 share two links, so there are four cases. A check per router pair would pass with the backup link down.",
         code: "Adjacency(router='r1', neighbor='r2', router_id='2.2.2.2', local_port='p2', link='primary')\nAdjacency(router='r1', neighbor='r2', router_id='2.2.2.2', local_port='p3', link='backup')\n→ [r1-r2-primary] [r1-r2-backup] [r2-r1-primary] [r2-r1-backup]",
-        where: "netcheck/expected.py · Expected.adjacencies" },
+        where: "netcheck/model/expected.py · Expected.adjacencies" },
       SNAPSHOT_STEP,
       { t: "Are the OSPF settings on the port right?", layer: "capability", step: 2, nodes: ["r1"], links: ["backup"],
         p: "Before waiting for the neighbor, compare r1:p3's OSPF area, network type and timers with the intent. A hello-timer mismatch shows up here as a drift line, not as a timeout.",
@@ -804,7 +804,7 @@ const SCENARIOS = [
       { t: "Poll, never sleep", layer: "assertion", step: 3, nodes: ["r1"], links: ["backup"],
         p: "Asked every second until Full or 30 s pass (45 s on Air). The wait is recorded against the 10 s SLA and printed in the measurements summary.",
         code: "# timing.yaml\nlocal:  ospf_neighbor_full: {sla: 10, timeout: 30, poll: 1}\nnvidia: ospf_neighbor_full: {sla: 10, timeout: 45, poll: 2}",
-        where: "netcheck/timing.py · Timing.wait_until" },
+        where: "netcheck/run/timing.py · Timing.wait_until" },
       { t: "Verdict", layer: "assertion", step: 3, nodes: ["r1","r2"], links: ["backup"],
         p: "<span class='pill pass'>pass</span> neighbor Full on p3.<br><span class='pill fail'>fail</span> the report shows both routers' neighbors, says whether another link to r2 is still Full, and shows the failed link's admin and operational state.",
         code: "diagnosis: r1 is Full with r2 via p2; only p3 is down\nr1:p3 link (backup): admin down, operstate DOWN",
@@ -817,7 +817,7 @@ const SCENARIOS = [
       { t: "What every port must carry", layer: "intent", step: 1, nodes: ["sw1"], links: ["h1-sw1","h2-sw1","h3-sw1","sw1-r1"],
         p: "The expected membership comes back in the same type the switch will return, so the comparison is exact: mode and VLAN list per port.",
         code: "lab.expected.vlan_membership('sw1')\n{'p1': PortVlans('access', (10,)), 'p2': PortVlans('access', (10,)),\n 'p3': PortVlans('access', (20,)), 'p4': PortVlans('trunk', (10, 20))}",
-        where: "netcheck/expected.py · Expected.vlan_membership" },
+        where: "netcheck/model/expected.py · Expected.vlan_membership" },
       SNAPSHOT_STEP,
       { t: "Read the live switch once", layer: "transport", step: 2, nodes: ["sw1"], links: [],
         p: "One read of the whole bridge. A port the intent doesn't know is kept under its real name (eth9, swp9) so the last step can report it. The bridge device itself is skipped.",
@@ -827,7 +827,7 @@ const SCENARIOS = [
       { t: "One soft step per port", layer: "assertion", step: 5, nodes: ["sw1","h3"], links: ["h3-sw1"],
         p: "<code>continue_on_failure=True</code>: a failed port is recorded as <code>[FAILED, continued]</code> and the next port is still checked. One run lists every bad port instead of stopping at the first.",
         code: "for port, spec in sorted(expected.items()):\n    with step(f\"Check sw1:{port} is {intended}\", continue_on_failure=True):\n        check_port_vlans('sw1', port, expected, live)",
-        where: "tests/lab/test_drift.py · netcheck/steps.py" },
+        where: "tests/lab/test_drift.py · netcheck/run/steps.py" },
       { t: "Unplanned ports", layer: "assertion", step: 7, nodes: ["sw1"], links: [],
         p: "The last soft step fails if the bridge has a port the intent doesn't list: someone plugged something in outside the design. Verified on the real lab with a dummy port.",
         code: "7. Check sw1 has no bridge ports the intent does not list\n   [FAILED, continued] - actual: also dummy9\n   sw1:dummy9: expected 'absent', actual 'trunk VLAN 1,10'  (not in the intent)",
@@ -844,7 +844,7 @@ const SCENARIOS = [
       { t: "The plan comes from the intent", layer: "intent", step: 1, nodes: ["r1","r2","h1","h4"], links: ["primary","backup"],
         p: "<code>lab.expected.failover()</code> finds the links labelled primary and backup, the passive LAN behind r2 and a host on each side. The next hop after the failure is r2's address on the backup link.",
         code: "FailoverPlan(router='r1', primary_port='p2', primary_hop='10.0.12.1',\n             backup_hop='10.0.12.3', prefix='10.0.30.0/24', src='h1', dst='h4')",
-        where: "netcheck/expected.py · Expected.failover" },
+        where: "netcheck/model/expected.py · Expected.failover" },
       SNAPSHOT_STEP,
       { t: "Start on the right path", layer: "assertion", step: 2, nodes: ["r1"], links: ["primary"],
         p: "If traffic already used the backup, taking the primary down would measure nothing. The test checks the starting next hop first.",
@@ -858,11 +858,11 @@ const SCENARIOS = [
       { t: "Wait for the backup path", layer: "assertion", step: 3, nodes: ["r1"], links: ["backup"],
         p: "r1's routing table is polled every 0.2 s until 10.0.30.0/24 points at 10.0.12.3. That wait is the control-plane convergence time.",
         code: "reconverge_local_link: {sla: 2, timeout: 10, poll: 0.2, stream_interval: 0.01}",
-        where: "netcheck/convergence.py · measure_reconvergence" },
+        where: "netcheck/assertions/convergence.py · measure_reconvergence" },
       { t: "Measure the outage", layer: "assertion", step: 4, nodes: ["h1","r1","r2","h4"], links: ["h1-sw1","sw1-r1","backup","r2-h4"],
         p: "After a second of recovery traffic the stream stops. Outage = lost packets × 10 ms, the loss-based method from RFC 6413. Checked against the 2 s SLA and printed in the <b>netcheck measurements</b> summary; on CI it is recorded, not enforced.",
         code: "stream: 1640 sent, 12 lost → outage 0.12 s (example)\nreconverge_local_link = 0.120s (SLA 2s)",
-        where: "convergence.py · outage_seconds → timing.record" },
+        where: "assertions/convergence.py · outage_seconds → timing.record" },
       RESTORE("bring r1:p2 back up, stop the stream"),
     ] },
 ];

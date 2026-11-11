@@ -20,9 +20,9 @@ Group survivors by module family, for example:
 | Group | Modules |
 |---|---|
 | Parsers | `backends/local.py` (`parse_*`, `frr_config_diff`, `host_route_diff`), `backends/nvidia_air.py` (`parse_nvue_*`) |
-| Intent and expected state | `intent.py`, `expected.py`, `ports.py`, `render.py` |
-| Assertions and reports | `assertions/*`, `report.py`, `steps.py`, `testrun.py` |
-| Lifecycle | `backends/base.py`, `labstate.py`, `cleanup.py`, `timing.py`, `pytest_plugin.py` |
+| Intent and expected state | `model/intent.py`, `model/expected.py`, `model/ports.py`, `model/render.py` |
+| Assertions and reports | `assertions/*`, `run/report.py`, `run/steps.py`, `run/testrun.py` |
+| Lifecycle | `backends/base.py`, `backends/labstate.py`, `run/cleanup.py`, `run/timing.py`, `pytest_plugin.py` |
 
 For each survivor read the mutant (`uv run mutmut show <name>`), the function, and the tests
 that reach it (`uv run mutmut tests-for-mutant <name>`). Report **one finding per behaviour,

@@ -11,8 +11,8 @@ from typing import cast
 
 from netcheck.backends import Backend, get_backend
 from netcheck.backends.base import LabDegraded, RestoreFailed, SnapshotMismatch
-from netcheck.faults import FAULTS
-from netcheck.intent import load_intent
+from netcheck.faults.catalog import FAULTS
+from netcheck.model.intent import load_intent
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -88,7 +88,7 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
     elif args.cmd == "summary":
         import json
 
-        from netcheck import measurements
+        from netcheck.run import measurements
 
         run = Path(args.artifacts) / measurements.RUN_FILE
         if not run.is_file():
@@ -102,10 +102,10 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
             print("error: record-fixtures records the local backend; for NVIDIA use record_samples")
             return 1
         from netcheck.backends.local import LocalBackend
-        from netcheck.backends.local_samples import NotConverged, record_local_samples
+        from netcheck.run.local_samples import NotConverged, record_local_samples
 
         dest = ROOT / "tests" / "unit" / "fixtures" / "local"
-        from netcheck.timing import Timing
+        from netcheck.run.timing import Timing
 
         intent = backend.intent
         timing = Timing.load(ROOT / "timing.yaml", backend.timing_profile, intent.timer_vars())
@@ -118,7 +118,7 @@ def _run(args: argparse.Namespace, backend: Backend) -> int:
         print(f"recorded {len(written)} devices into {where} (provenance.yaml updated)")
         print("review `git diff tests/unit/fixtures/local`, then run `make check`")
     elif args.cmd == "fault-check":
-        from netcheck.faultcheck import check_faults
+        from netcheck.faults.check import check_faults
 
         pytest_cmd = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q"]
         pytest_cmd += ["--backend", backend.name, "--intent", args.intent]

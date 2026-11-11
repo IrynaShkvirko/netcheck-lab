@@ -1,4 +1,4 @@
-"""Every rule in netcheck.intent.validate, one broken intent each: the intent is the input
+"""Every rule in netcheck.model.intent.validate, one broken intent each: the intent is the input
 to device commands, so each rule must reject what it says and accept its boundary values."""
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import yaml
 
-from netcheck.intent import Intent, IntentError, load_intent
+from netcheck.model.intent import Intent, IntentError, load_intent
 
 from .intents import ROOT
 

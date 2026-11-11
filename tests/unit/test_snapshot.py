@@ -7,7 +7,7 @@ import json
 import pytest
 
 from netcheck.backends.base import LabDegraded, RestoreFailed, SnapshotMismatch
-from netcheck.capabilities import PortVlans, Snapshot
+from netcheck.model.capabilities import PortVlans, Snapshot
 
 
 def test_restore_brings_every_device_back(fake) -> None:  # type: ignore[no-untyped-def]

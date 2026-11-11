@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from netcheck.backends.base import Backend
-from netcheck.faults import FAULTS, Detection
+from netcheck.faults.catalog import FAULTS, Detection
 
 EXIT_LAB_UNTRUSTED = 3  # the pytest plugin's exit code when a restore failed
 

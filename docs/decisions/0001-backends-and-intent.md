@@ -49,7 +49,7 @@ vendor, image or interface.
 
 ### Update 2026-11-07: expected state is a typed module
 
-The third output is computed by `netcheck.expected.Expected`. Tests and assertions ask it
+The third output is computed by `netcheck.model.expected.Expected`. Tests and assertions ask it
 questions (`vlan_membership(switch)`, `routes(router)`, `originator(prefix)`,
 `attachment(host)`, `failover()`) and get the same normalized types the capabilities
 return, instead of reading string keys from a dict. `expected_state.json` is its

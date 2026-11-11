@@ -6,7 +6,7 @@ from netcheck.backends.local import (
     parse_frr_routes,
     parse_ping,
 )
-from netcheck.ports import PortMap
+from netcheck.model.ports import PortMap
 
 PORTS = PortMap({"p2": "eth2", "p3": "eth3", "p1": "eth1", "p4": "eth4"})
 

@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from netcheck.timing import Measurement
+from netcheck.run.timing import Measurement
 
 RUN_FILE = "measurements.json"
 HISTORY_DEFAULT = Path(".netcheck") / "measurements.jsonl"

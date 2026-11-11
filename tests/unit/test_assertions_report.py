@@ -11,10 +11,10 @@ from netcheck.assertions import (
     assert_route_present,
     check_vlan_membership,
 )
-from netcheck.capabilities import OspfNeighbor, PortVlans, Route
-from netcheck.ports import PortMap
-from netcheck.report import FailureReport, IntentViolation
-from netcheck.transport.base import TransportError
+from netcheck.devices.transport.base import TransportError
+from netcheck.model.capabilities import OspfNeighbor, PortVlans, Route
+from netcheck.model.ports import PortMap
+from netcheck.run.report import FailureReport, IntentViolation
 
 
 def test_isolation_passes_and_cleans_up(fake) -> None:  # type: ignore[no-untyped-def]
@@ -80,7 +80,7 @@ def test_route_present_passes(fake) -> None:  # type: ignore[no-untyped-def]
 
 
 def test_report_renders_all_eight_parts() -> None:
-    from netcheck.report import DiffLine
+    from netcheck.run.report import DiffLine
 
     r = FailureReport(
         verdict="h1 and h3 must be isolated",
@@ -244,7 +244,7 @@ def test_changed_cost_and_missing_gateway_address_are_drift(fake) -> None:  # ty
 
 
 def _unreadable(*_: object) -> object:
-    from netcheck.transport.base import TransportError
+    from netcheck.devices.transport.base import TransportError
 
     raise TransportError("r1: docker exec failed")
 
@@ -291,7 +291,7 @@ def test_drift_report_reads_each_router_once_and_shows_its_lsdb(fake, monkeypatc
 
 
 def test_neighbor_check_reads_the_table_once(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.timing import WaitTimeout
+    from netcheck.run.timing import WaitTimeout
 
     lab, parts = fake
     r1 = parts["ospf_r1"]
@@ -405,7 +405,7 @@ def test_a_route_known_but_not_installed_is_not_present(fake) -> None:  # type: 
 @pytest.mark.parametrize("check", ["uses", "next_hops"])
 def test_a_route_check_on_an_unreadable_router_reports_why(fake, monkeypatch, check: str) -> None:  # type: ignore[no-untyped-def]
     from netcheck.assertions import assert_route_next_hops, assert_route_uses
-    from netcheck.expected import NextHop
+    from netcheck.model.expected import NextHop
 
     lab, parts = fake
     monkeypatch.setattr(parts["ospf_r1"], "routes", _routes_unreadable)
@@ -428,7 +428,7 @@ def test_a_route_check_on_an_unreadable_router_reports_why(fake, monkeypatch, ch
 
 def test_a_route_on_the_wrong_next_hop_shows_the_one_it_has(fake) -> None:  # type: ignore[no-untyped-def]
     from netcheck.assertions import assert_route_next_hops, assert_route_uses
-    from netcheck.expected import NextHop
+    from netcheck.model.expected import NextHop
 
     lab, parts = fake
     parts["ospf_r1"].rib = {"10.0.30.0/24": Route("10.0.30.0/24", "ospf", ("10.0.12.3",), True)}

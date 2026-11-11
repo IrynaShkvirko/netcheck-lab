@@ -8,8 +8,8 @@ from netcheck.assertions import (
     check_port_vlans,
     describe_vlans,
 )
-from netcheck.lab import Lab
-from netcheck.steps import step
+from netcheck.run.lab import Lab
+from netcheck.run.steps import step
 
 pytestmark = pytest.mark.drift
 

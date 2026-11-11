@@ -18,7 +18,7 @@ networking-specific report standard; we combine three references:
 ## Decision
 
 Domain assertions raise `IntentViolation`, which carries a `FailureReport`. The pytest
-hook asks the test run (`netcheck.testrun`) to complete it, then renders it. Every report
+hook asks the test run (`netcheck.run.testrun`) to complete it, then renders it. Every report
 has eight parts:
 
 1. **Verdict**: one line naming the violated intent, not the symptom.

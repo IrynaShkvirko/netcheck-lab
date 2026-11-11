@@ -6,10 +6,10 @@ from collections.abc import Callable
 
 import pytest
 
-from netcheck.device import Device
-from netcheck.expected import Expected
-from netcheck.intent import load_intent
-from netcheck.lab import Lab
+from netcheck.devices.device import Device
+from netcheck.model.expected import Expected
+from netcheck.model.intent import load_intent
+from netcheck.run.lab import Lab
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:

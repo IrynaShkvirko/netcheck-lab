@@ -10,18 +10,18 @@ from typing import Any
 import pytest
 import yaml
 
-from netcheck import provenance
-from netcheck.assembly import DeviceSpec, assemble
+from netcheck.backends import provenance
 from netcheck.backends.local import LocalBackend, LocalFactory
-from netcheck.backends.local_samples import (
+from netcheck.devices.assembly import DeviceSpec, assemble
+from netcheck.devices.transport.base import CommandResult, CommandTransport
+from netcheck.model.expected import Expected
+from netcheck.model.intent import Intent, load_intent
+from netcheck.run.local_samples import (
     NotConverged,
     RecordingTransport,
     exercise,
     record_local_samples,
 )
-from netcheck.expected import Expected
-from netcheck.intent import Intent, load_intent
-from netcheck.transport.base import CommandResult, CommandTransport
 
 from .fakes import fast_timing
 from .fakes_local import ScriptedTransport

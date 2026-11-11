@@ -15,7 +15,7 @@ import pytest
 from .intents import ROOT
 
 SCRIPT = ROOT / "scripts" / "mutation-floor.py"
-M = "netcheck.timing"
+M = "netcheck.run.timing"
 
 
 def run(cwd: Path, *args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
@@ -38,7 +38,7 @@ def lab(
         by_reason.setdefault(why, []).append(name)
     lines += [f'"{why}" = {json.dumps(names)}' for why, names in by_reason.items()]
     (tmp_path / "pyproject.toml").write_text("\n".join(lines) + "\n")
-    meta = tmp_path / "mutants" / "netcheck" / "timing.py.meta"
+    meta = tmp_path / "mutants" / "netcheck" / "run" / "timing.py.meta"
     meta.parent.mkdir(parents=True)
     meta.write_text(json.dumps({"exit_code_by_key": {f"{M}.{k}": v for k, v in codes.items()}}))
     return tmp_path
@@ -119,23 +119,23 @@ def test_a_reason_is_required_and_a_mutant_has_one(tmp_path: Path) -> None:
 def test_check_can_be_limited_to_the_modules_a_pr_mutated(tmp_path: Path) -> None:
     folder = lab(tmp_path, CODES, 80, BOTH)
     cfg = folder / "pyproject.toml"
-    cfg.write_text(cfg.read_text().replace("-floor]", '-floor]\n"netcheck.intent" = 90'))
-    assert run(folder, "check").returncode == 1  # netcheck.intent has no results
+    cfg.write_text(cfg.read_text().replace("-floor]", '-floor]\n"netcheck.model.intent" = 90'))
+    assert run(folder, "check").returncode == 1  # netcheck.model.intent has no results
     assert run(folder, "check", "--modules", M).returncode == 0
-    out = run(folder, "check", "--modules", "netcheck.ports")
-    assert "not guarded modules: ['netcheck.ports']" in out.stdout
+    out = run(folder, "check", "--modules", "netcheck.model.ports")
+    assert "not guarded modules: ['netcheck.model.ports']" in out.stdout
 
 
 @pytest.mark.parametrize(
     ("paths", "modules"),
     [
-        (["netcheck/timing.py", "netcheck/ports.py", "README.md"], [M]),
-        (["netcheck/ports.py", "docs/x.md"], []),
-        (["tests/unit/test_ports.py"], ["netcheck.intent", M]),
-        (["pyproject.toml"], ["netcheck.intent", M]),
-        (["conftest.py"], ["netcheck.intent", M]),
+        (["netcheck/run/timing.py", "netcheck/model/ports.py", "README.md"], [M]),
+        (["netcheck/model/ports.py", "docs/x.md"], []),
+        (["tests/unit/test_ports.py"], ["netcheck.model.intent", M]),
+        (["pyproject.toml"], ["netcheck.model.intent", M]),
+        (["conftest.py"], ["netcheck.model.intent", M]),
         (["tests/lab/test_vlan.py"], []),
-        ([], ["netcheck.intent", M]),  # no list (manual run): every guarded module
+        ([], ["netcheck.model.intent", M]),  # no list (manual run): every guarded module
     ],
 )
 def test_select_mutates_what_a_change_can_weaken(
@@ -143,7 +143,7 @@ def test_select_mutates_what_a_change_can_weaken(
 ) -> None:
     folder = lab(tmp_path, CODES, 80, BOTH)
     cfg = folder / "pyproject.toml"
-    cfg.write_text(cfg.read_text().replace("-floor]", '-floor]\n"netcheck.intent" = 90'))
+    cfg.write_text(cfg.read_text().replace("-floor]", '-floor]\n"netcheck.model.intent" = 90'))
     out = run(folder, "select", stdin="\n".join(paths))
     assert out.stdout.splitlines() == [
         f"modules={' '.join(modules)}",

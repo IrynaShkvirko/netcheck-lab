@@ -27,7 +27,7 @@ would notice if it were wrong.
 
 - `mutmut` is in the dev dependency group (3.8.1 when added; runs on Python 3.14).
 - `[tool.mutmut]` in `pyproject.toml`: mutate `netcheck/` except
-  `netcheck/transport/docker_exec.py` and `netcheck/transport/nvue_rest.py`; test with
+  `netcheck/devices/transport/docker_exec.py` and `netcheck/devices/transport/nvue_rest.py`; test with
   `tests/unit`; copy `intent/`, `timing.yaml`, `backends.yaml`, the root `conftest.py`,
   `README.md`, `scripts/` and `.github/` into the run (mutmut copies `tests/` and
   `pyproject.toml` itself). `also_copy` cannot copy a single file into a folder that is not
@@ -43,7 +43,7 @@ Makefile sets):
 ```bash
 make mutate                                   # mutmut run + mutmut results
 uv run mutmut run                             # every mutant (~5,500; ~4 min on a recent Mac)
-uv run mutmut run "netcheck.ports.*"          # only some mutants (glob on names)
+uv run mutmut run "netcheck.model.ports.*"          # only some mutants (glob on names)
 uv run mutmut results                         # survivors, timeouts, no-tests
 uv run mutmut results --all true              # every mutant with its status
 uv run mutmut show <name>                     # the diff of one mutant
@@ -60,8 +60,8 @@ for a hand proof, and revert with `git checkout -- <file>` straight after.
 for a method (the separator is `ǁ`, U+01C1):
 
 ```
-netcheck.ports.x_port_name__mutmut_1
-netcheck.ports.xǁPortMapǁreal__mutmut_7
+netcheck.model.ports.x_port_name__mutmut_1
+netcheck.model.ports.xǁPortMapǁreal__mutmut_7
 ```
 
 ### Statuses
@@ -82,7 +82,7 @@ run the **unmutated** code and every mutant would "survive". So first run one mu
 must be killed:
 
 ```bash
-uv run mutmut run "netcheck.ports.xǁPortMapǁreal__mutmut_1"   # base, dot, vid = None
+uv run mutmut run "netcheck.model.ports.xǁPortMapǁreal__mutmut_1"   # base, dot, vid = None
 ```
 
 It must report `🎉` (killed). If it survives, the run is broken, not the tests: check that
@@ -90,6 +90,10 @@ the files the tests read are listed in `also_copy`, then delete `mutants/` and r
 same applies whenever `mutmut results` suddenly shows far more survivors than before.
 
 ## Baseline
+
+The tables use the module names of the time, before the code moved into packages:
+`convergence` is now `assertions.convergence`; `timing` is `run.timing`; `expected`, `intent`
+and `ports` are in `model`; `assembly` is in `devices`.
 
 First full run (2026-11-07): 5,476 mutants, **67.2% killed** (3,681), 1,380 survived,
 402 no tests, 13 timeouts.
@@ -119,8 +123,9 @@ survived. The guarded modules went from 50–90% to 92–99%:
 
 ## The floor (guarded modules)
 
-The modules a verdict rests on are guarded: the four `assertions` modules, `convergence`,
-`timing`, `expected`, `intent` and `backends.base`. Two rules hold for each, enforced by
+The modules a verdict rests on are guarded: the five `assertions` modules (`common`, `l2`,
+`ospf`, `reachability`, `convergence`), `model.expected`, `model.intent`, `run.timing` and
+`backends.base`. Two rules hold for each, enforced by
 `scripts/mutation-floor.py check` (`make mutation-floor`, the end of `make mutate`, the CI
 `mutation` job and the nightly run):
 
@@ -161,7 +166,7 @@ A real example from the first run:
 +    return self._real.get(base, None) + (f".{vid}" if dot else "")
 ```
 
-`netcheck.ports.xǁPortMapǁreal__mutmut_7` survives: `PortMap.real()` promises to return a
+`netcheck.model.ports.xǁPortMapǁreal__mutmut_7` survives: `PortMap.real()` promises to return a
 name the intent does not map unchanged, and no test calls it with such a name. That is a
 **test gap** (the code is right), fixed by one assertion:
 

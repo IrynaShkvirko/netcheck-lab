@@ -29,7 +29,7 @@ def lab_affected(paths: list[str]) -> str:
         (["tests/unit/test_ci.py", "README.md"], "lab=false"),
         (["docs/decisions/0004-timing-and-thresholds.md", ".claude/agents/README.md"], "lab=false"),
         ([".github/dependabot.yml", ".gitignore"], "lab=false"),
-        (["tests/unit/test_ci.py", "netcheck/render.py"], "lab=true"),
+        (["tests/unit/test_ci.py", "netcheck/model/render.py"], "lab=true"),
         (["tests/lab/test_vlan.py"], "lab=true"),
         (["timing.yaml"], "lab=true"),
         (["backends.yaml"], "lab=true"),

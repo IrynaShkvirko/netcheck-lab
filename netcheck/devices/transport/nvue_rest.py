@@ -7,8 +7,8 @@ from typing import Any
 
 import requests
 
-from netcheck.devicelog import DeviceLog
-from netcheck.transport.base import ApiResult, TransportError
+from netcheck.devices.devicelog import DeviceLog
+from netcheck.devices.transport.base import ApiResult, TransportError
 
 SECRET_WORDS = ("password", "secret", "token", "key", "community", "credential")
 

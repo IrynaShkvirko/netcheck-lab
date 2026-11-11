@@ -12,8 +12,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from netcheck.capabilities import OspfInterface, PortVlans
-from netcheck.intent import Intent, Link
+from netcheck.model.capabilities import OspfInterface, PortVlans
+from netcheck.model.intent import Intent, Link
 
 
 @dataclass(frozen=True)

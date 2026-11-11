@@ -24,10 +24,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from netcheck import provenance
-from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
+from netcheck.backends import provenance
 from netcheck.backends.base import Backend
-from netcheck.capabilities import (
+from netcheck.devices.assembly import CapabilityFactory, DeviceSpec, assemble
+from netcheck.devices.device import Device
+from netcheck.devices.transport.base import ApiTransport, TransportError
+from netcheck.devices.transport.nvue_rest import NvueRestTransport
+from netcheck.model.capabilities import (
     Bridge,
     Links,
     LinkState,
@@ -37,11 +40,8 @@ from netcheck.capabilities import (
     PortVlans,
     Route,
 )
-from netcheck.device import Device
-from netcheck.intent import Intent
-from netcheck.ports import PortMap
-from netcheck.transport.base import ApiTransport, TransportError
-from netcheck.transport.nvue_rest import NvueRestTransport
+from netcheck.model.intent import Intent
+from netcheck.model.ports import PortMap
 
 BRIDGE_DOMAIN = "br_default"
 

@@ -7,12 +7,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from netcheck.assembly import DeviceSpec, assemble
 from netcheck.backends.nvidia_air import PATHS, NvueFactory
-from netcheck.intent import Intent
-from netcheck.lab import Lab
-from netcheck.ports import PortMap
-from netcheck.transport.base import ApiResult, ApiTransport
+from netcheck.devices.assembly import DeviceSpec, assemble
+from netcheck.devices.transport.base import ApiResult, ApiTransport
+from netcheck.model.intent import Intent
+from netcheck.model.ports import PortMap
+from netcheck.run.lab import Lab
 
 SAMPLES = Path(__file__).parent / "fixtures" / "nvue"
 _NAMES = {path: name for name, path in PATHS.items()}

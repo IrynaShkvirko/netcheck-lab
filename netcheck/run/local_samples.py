@@ -21,13 +21,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from netcheck import provenance
-from netcheck.assembly import DeviceSpec, assemble
+from netcheck.backends import provenance
 from netcheck.backends.local import LinuxShell, LocalBackend, LocalFactory
-from netcheck.capabilities import Bridge, Links, Ospf
-from netcheck.expected import Expected
-from netcheck.timing import Timing, WaitTimeout
-from netcheck.transport.base import CommandResult, CommandTransport
+from netcheck.devices.assembly import DeviceSpec, assemble
+from netcheck.devices.transport.base import CommandResult, CommandTransport
+from netcheck.model.capabilities import Bridge, Links, Ospf
+from netcheck.model.expected import Expected
+from netcheck.run.timing import Timing, WaitTimeout
 
 
 class NotConverged(RuntimeError):

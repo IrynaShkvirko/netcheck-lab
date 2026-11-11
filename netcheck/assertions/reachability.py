@@ -5,11 +5,11 @@ from __future__ import annotations
 from functools import partial
 
 from netcheck.assertions.common import arp_line, evidence, fail
-from netcheck.capabilities import PingResult
-from netcheck.device import Device
-from netcheck.lab import current
-from netcheck.report import FailureReport
-from netcheck.timing import WaitTimeout
+from netcheck.devices.device import Device
+from netcheck.model.capabilities import PingResult
+from netcheck.run.lab import current
+from netcheck.run.report import FailureReport
+from netcheck.run.timing import WaitTimeout
 
 
 def assert_reachable(a: Device, b: Device) -> PingResult:

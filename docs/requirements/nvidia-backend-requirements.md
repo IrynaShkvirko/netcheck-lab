@@ -10,7 +10,7 @@ Makefile, CI (opt-in), docs. Tests and assertions are not changed.
 - ADR-0001 (two backends, one intent; Air open questions), ADR-0002 (composition, transports),
   ADR-0003 (lifecycle, snapshots; NVUE rollback open question), ADR-0004 (NVIDIA timing profile)
 - Current code: `netcheck/backends/nvidia_air.py` (NVUE parsers and revision flow done, lab side
-  stubbed), `netcheck/transport/nvue_rest.py`, `tests/unit/test_nvue.py`, `tests/unit/fakes_nvue.py`
+  stubbed), `netcheck/devices/transport/nvue_rest.py`, `tests/unit/test_nvue.py`, `tests/unit/fakes_nvue.py`
 - Implementation plan: `docs/plans/2026-11-08-nvidia-backend-implementation-plan.md`
 - DSX Air: [API authentication](https://docs.nvidia.com/dsx-air/authentication.md),
   [import a topology](https://docs.nvidia.com/dsx-air/api-reference/simulations/api-v-3-simulations-import-create.md),
