@@ -7,12 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from netcheck.cleanup import CleanupRegistry
-from netcheck.device import Device
-from netcheck.expected import Expected
-from netcheck.intent import Intent
-from netcheck.testrun import TestRun
-from netcheck.timing import Timing
+from netcheck.devices.device import Device
+from netcheck.model.expected import Expected
+from netcheck.model.intent import Intent
+from netcheck.run.cleanup import CleanupRegistry
+from netcheck.run.testrun import TestRun
+from netcheck.run.timing import Timing
 
 if TYPE_CHECKING:
     from netcheck.backends.base import Backend

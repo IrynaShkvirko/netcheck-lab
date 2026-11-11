@@ -15,11 +15,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from netcheck.assertions.common import attempt, evidence, fail, ospf_neighbor_lines
-from netcheck.capabilities import PingResult
-from netcheck.device import Device
-from netcheck.lab import current
-from netcheck.report import FailureReport
-from netcheck.timing import WaitTimeout
+from netcheck.devices.device import Device
+from netcheck.model.capabilities import PingResult
+from netcheck.run.lab import current
+from netcheck.run.report import FailureReport
+from netcheck.run.timing import WaitTimeout
 
 
 @dataclass

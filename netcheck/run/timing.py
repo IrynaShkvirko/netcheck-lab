@@ -13,7 +13,7 @@ from typing import Any, TypeVar
 
 import yaml
 
-from netcheck.transport.base import TransportError
+from netcheck.devices.transport.base import TransportError
 
 T = TypeVar("T")
 

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from netcheck import provenance
+from netcheck.backends import provenance
 from netcheck.backends.nvidia_air import (
     NvueBridge,
     NvueLinks,
@@ -20,11 +20,11 @@ from netcheck.backends.nvidia_air import (
     parse_nvue_neighbors,
     parse_nvue_routes,
 )
-from netcheck.capabilities import OspfNeighbor, PortVlans, Route
-from netcheck.expected import Expected
-from netcheck.intent import Intent
-from netcheck.ports import PortMap
-from netcheck.transport.base import TransportError
+from netcheck.devices.transport.base import TransportError
+from netcheck.model.capabilities import OspfNeighbor, PortVlans, Route
+from netcheck.model.expected import Expected
+from netcheck.model.intent import Intent
+from netcheck.model.ports import PortMap
 
 from .fakes_nvue import SAMPLES, FakeNvueTransport, nvue_ports
 
@@ -208,8 +208,8 @@ import sys
 sys.path.insert(0, {repo!r})
 from pathlib import Path
 import pytest
-from netcheck.intent import load_intent
-from netcheck.lab import set_current
+from netcheck.model.intent import load_intent
+from netcheck.run.lab import set_current
 from tests.unit.fakes import build_fake_lab, make_healthy
 from tests.unit.fakes_nvue import use_nvue_devices
 

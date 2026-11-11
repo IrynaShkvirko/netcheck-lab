@@ -8,9 +8,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
-from netcheck.assembly import CapabilityFactory, DeviceSpec, assemble
 from netcheck.backends.base import Backend
-from netcheck.capabilities import (
+from netcheck.devices.assembly import CapabilityFactory, DeviceSpec, assemble
+from netcheck.devices.device import Device
+from netcheck.model.capabilities import (
     Bridge,
     CaptureHandle,
     Links,
@@ -24,11 +25,10 @@ from netcheck.capabilities import (
     Shell,
     Snapshot,
 )
-from netcheck.device import Device
-from netcheck.expected import Expected
-from netcheck.intent import Intent, Link
-from netcheck.lab import Lab
-from netcheck.timing import Threshold, Timing
+from netcheck.model.expected import Expected
+from netcheck.model.intent import Intent, Link
+from netcheck.run.lab import Lab
+from netcheck.run.timing import Threshold, Timing
 
 
 class FakeOspf(Ospf):

@@ -1,4 +1,4 @@
-from netcheck.transport.base import (
+from netcheck.devices.transport.base import (
     ApiResult,
     ApiTransport,
     CommandResult,

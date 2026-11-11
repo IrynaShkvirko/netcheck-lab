@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from netcheck.capabilities import OspfInterface, PortVlans
-from netcheck.expected import Adjacency, Attachment, Expected, NextHop
-from netcheck.intent import load_intent
+from netcheck.model.capabilities import OspfInterface, PortVlans
+from netcheck.model.expected import Adjacency, Attachment, Expected, NextHop
+from netcheck.model.intent import load_intent
 
 from .intents import ROOT
 

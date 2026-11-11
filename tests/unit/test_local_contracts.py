@@ -16,16 +16,16 @@ from typing import Any, cast
 
 import pytest
 
-from netcheck import provenance
-from netcheck.assembly import DeviceSpec, assemble
 from netcheck.assertions.ospf import ospf_interface_drift
+from netcheck.backends import provenance
 from netcheck.backends.local import LinuxShell, LocalFactory
-from netcheck.backends.local_samples import peers, ping
-from netcheck.capabilities import Bridge, Links, Ospf
-from netcheck.device import Device
-from netcheck.expected import Expected
-from netcheck.intent import load_intent
-from netcheck.transport.base import CommandResult, CommandTransport
+from netcheck.devices.assembly import DeviceSpec, assemble
+from netcheck.devices.device import Device
+from netcheck.devices.transport.base import CommandResult, CommandTransport
+from netcheck.model.capabilities import Bridge, Links, Ospf
+from netcheck.model.expected import Expected
+from netcheck.model.intent import load_intent
+from netcheck.run.local_samples import peers, ping
 
 from .fakes_local import ScriptedTransport
 from .intents import ROOT
@@ -114,7 +114,7 @@ def test_frr_lsdb_knows_exactly_the_networks_the_intent_puts_into_ospf(name: str
 
 @pytest.mark.parametrize("name", _devices(Ospf))
 def test_frr_running_config_parses_to_the_intended_interfaces(name: str) -> None:
-    """The real `show running-config`, not the one render.py wrote: what FRR prints back
+    """The real `show running-config`, not the one model/render.py wrote: what FRR prints back
     (area spelling, defaults it adds or drops) must read as the intent."""
     live = DEVICES[name].ospf.interface_settings()
     for iface, want in EXPECTED.ospf_interfaces(name).items():

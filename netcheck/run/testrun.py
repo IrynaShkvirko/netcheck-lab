@@ -16,10 +16,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from netcheck.cleanup import CleanupError, CleanupRegistry
-from netcheck.device import Device
-from netcheck.report import FailureReport, IntentViolation
-from netcheck.timing import Measurement, Timing
+from netcheck.devices.device import Device
+from netcheck.run.cleanup import CleanupError, CleanupRegistry
+from netcheck.run.report import FailureReport, IntentViolation
+from netcheck.run.timing import Measurement, Timing
 
 if TYPE_CHECKING:
     from netcheck.backends.base import Backend
@@ -34,7 +34,7 @@ class StepRecord:
     title: str
     status: str = "running"  # running | passed | failed
     seconds: float = 0.0
-    # soft step: a failed check is recorded and the test goes on (see netcheck.steps)
+    # soft step: a failed check is recorded and the test goes on (see netcheck.run.steps)
     soft: bool = False
     failure: AssertionError | None = field(default=None, repr=False, compare=False)
 

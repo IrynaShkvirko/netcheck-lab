@@ -9,9 +9,9 @@ from netcheck.assertions import (
     assert_route_present,
     describe_next_hops,
 )
-from netcheck.expected import Adjacency
-from netcheck.lab import Lab
-from netcheck.steps import step
+from netcheck.model.expected import Adjacency
+from netcheck.run.lab import Lab
+from netcheck.run.steps import step
 
 pytestmark = pytest.mark.functional
 

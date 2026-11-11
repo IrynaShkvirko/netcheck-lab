@@ -16,8 +16,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from netcheck.backends.base import Backend
-from netcheck.expected import Expected
-from netcheck.intent import Intent
+from netcheck.model.expected import Expected
+from netcheck.model.intent import Intent
 
 
 @dataclass(frozen=True)

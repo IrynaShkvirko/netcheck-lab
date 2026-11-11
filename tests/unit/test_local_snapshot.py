@@ -11,8 +11,8 @@ from typing import Any
 import pytest
 
 from netcheck.backends.local import FrrOspf, LinuxBridge, LinuxLinks, LinuxShell, LocalSnapshot
-from netcheck.ports import PortMap
-from netcheck.transport.base import TransportError
+from netcheck.devices.transport.base import TransportError
+from netcheck.model.ports import PortMap
 
 from .fakes_local import ScriptedTransport
 

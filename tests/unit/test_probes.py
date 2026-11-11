@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from netcheck.assertions import assert_isolated, assert_ospf_neighbor_full, assert_reachable
-from netcheck.capabilities import CaptureHandle, PingResult
-from netcheck.report import IntentViolation
-from netcheck.timing import Threshold, Timing, WaitTimeout
-from netcheck.transport.base import TransportError
+from netcheck.devices.transport.base import TransportError
+from netcheck.model.capabilities import CaptureHandle, PingResult
+from netcheck.run.report import IntentViolation
+from netcheck.run.timing import Threshold, Timing, WaitTimeout
 
 NOT_RUN = PingResult(
     "h1", "10.0.30.14", 0, 0, error="ping did not run (rc=2): Network is unreachable"

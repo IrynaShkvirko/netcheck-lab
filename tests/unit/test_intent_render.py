@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from netcheck.expected import Expected
-from netcheck.intent import IntentError, load_intent, validate
-from netcheck.render import frr_config, port_name, render, switch_exec
+from netcheck.model.expected import Expected
+from netcheck.model.intent import IntentError, load_intent, validate
+from netcheck.model.render import frr_config, port_name, render, switch_exec
 
 
 def test_logical_ports_map_per_backend() -> None:

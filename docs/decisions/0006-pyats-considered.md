@@ -63,7 +63,7 @@ one run then lists every problem instead of stopping at the first.
 Option 3. pytest stays the runner, and the backends keep their own JSON parsers.
 
 We borrow soft steps from pyATS:
-`step(title, continue_on_failure=True)` in `netcheck.steps`.
+`step(title, continue_on_failure=True)` in `netcheck.run.steps`.
 
 - A failed check (`AssertionError`, which includes `IntentViolation`) is recorded on
   the step and the test continues. Any other error, `pytest.fail` and `pytest.skip`

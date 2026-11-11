@@ -13,12 +13,12 @@ from netcheck.assertions.common import (
     neighbor_line,
     ospf_neighbor_lines,
 )
-from netcheck.capabilities import OspfInterface, OspfNeighbor, Route
-from netcheck.device import Device
-from netcheck.expected import NextHop
-from netcheck.lab import Lab, current
-from netcheck.report import DiffLine, FailureReport
-from netcheck.timing import WaitTimeout
+from netcheck.devices.device import Device
+from netcheck.model.capabilities import OspfInterface, OspfNeighbor, Route
+from netcheck.model.expected import NextHop
+from netcheck.run.lab import Lab, current
+from netcheck.run.report import DiffLine, FailureReport
+from netcheck.run.timing import WaitTimeout
 
 # ---- comparing interface settings with the intent ------------------------------
 

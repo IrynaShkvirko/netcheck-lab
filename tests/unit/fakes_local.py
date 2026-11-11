@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from netcheck.transport.base import CommandResult
+from netcheck.devices.transport.base import CommandResult
 
 # A reply is stdout (str), JSON-able data (dumped as stdout), or a full CommandResult
 # (to give an exit code and stderr).

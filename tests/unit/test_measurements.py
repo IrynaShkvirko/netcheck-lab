@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from netcheck import measurements
-from netcheck.timing import Measurement
+from netcheck.run import measurements
+from netcheck.run.timing import Measurement
 
 CONTEXT = {"backend": "local", "intent": "campus-mini", "sla_mode": "strict", "repeats": 5}
 
@@ -71,7 +71,7 @@ def test_a_lab_session_saves_its_measurements(pytester, tmp_path: Path, monkeypa
         f"""
 from pathlib import Path
 from netcheck.pytest_plugin import MEASURED_KEY, SESSION_KEY
-from netcheck.timing import Measurement
+from netcheck.run.timing import Measurement
 
 def pytest_configure(config):
     config.stash[SESSION_KEY] = {{"backend": "local", "intent": "campus-mini",

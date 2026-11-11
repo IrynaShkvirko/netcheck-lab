@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from netcheck import provenance
-from netcheck.intent import Intent, load_intent
-from netcheck.lab import Lab, set_current
+from netcheck.backends import provenance
+from netcheck.model.intent import Intent, load_intent
+from netcheck.run.lab import Lab, set_current
 
 from .fakes import build_fake_lab
 

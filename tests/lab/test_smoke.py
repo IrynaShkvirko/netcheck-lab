@@ -3,10 +3,10 @@
 import pytest
 
 from netcheck.assertions.ospf import same_area
-from netcheck.capabilities import Links
-from netcheck.lab import Lab
-from netcheck.steps import step
-from netcheck.timing import WaitTimeout
+from netcheck.model.capabilities import Links
+from netcheck.run.lab import Lab
+from netcheck.run.steps import step
+from netcheck.run.timing import WaitTimeout
 
 pytestmark = pytest.mark.smoke
 

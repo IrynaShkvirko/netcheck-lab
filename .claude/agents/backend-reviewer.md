@@ -1,6 +1,6 @@
 ---
 name: backend-reviewer
-description: Skeptical reviewer of netcheck backend changes (backends, transports, capabilities, assembly, parsers, lifecycle, snapshots, timing). Use after modifying netcheck/backends/, netcheck/transport/, netcheck/assembly.py, netcheck/capabilities.py or backends.yaml/timing.yaml.
+description: Skeptical reviewer of netcheck backend changes (backends, transports, capabilities, assembly, parsers, lifecycle, snapshots, timing). Use after modifying netcheck/backends/, netcheck/devices/transport/, netcheck/devices/assembly.py, netcheck/model/capabilities.py or backends.yaml/timing.yaml.
 tools: Read, Glob, Grep, Bash
 model: inherit
 skills:
@@ -19,7 +19,7 @@ the changed files fall under (`docs/decisions/0001`–`0006` and later).
 
 ## Rules that block merge even if the skill fails to load
 
-- NOS syntax outside `netcheck/backends/` and `netcheck/transport/`
+- NOS syntax outside `netcheck/backends/` and `netcheck/devices/transport/`
 - a parser that returns empty state on an unknown shape
 - a restore that does not re-read and verify
 - reuse/redeploy/baseline decided anywhere but `Backend.up`

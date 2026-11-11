@@ -10,11 +10,11 @@ from typing import Any
 import pytest
 
 from netcheck.assertions import assert_isolated, control_target
-from netcheck.expected import Expected
-from netcheck.intent import load_intent
-from netcheck.lab import Lab, set_current
-from netcheck.report import IntentViolation
-from netcheck.timing import Threshold
+from netcheck.model.expected import Expected
+from netcheck.model.intent import load_intent
+from netcheck.run.lab import Lab, set_current
+from netcheck.run.report import IntentViolation
+from netcheck.run.timing import Threshold
 
 from .fakes import build_fake_lab
 from .intents import ROOT
@@ -67,7 +67,7 @@ def test_control_target_prefers_what_depends_on_least(fake, two_site) -> None:  
 
 
 def test_a_router_joining_the_vlans_breaks_isolation(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.capabilities import OspfInterface
+    from netcheck.model.capabilities import OspfInterface
 
     lab, parts = fake
     lab["h1"].shell.world.leaks.add(frozenset({"h1", "h3"}))  # type: ignore[attr-defined]
@@ -98,7 +98,7 @@ def test_probes_that_never_left_the_sender_are_inconclusive(fake) -> None:  # ty
 def test_a_sender_cut_off_from_its_own_vlan_is_inconclusive(fake) -> None:  # type: ignore[no-untyped-def]
     """h1's port carries no VLAN 10 any more: h3 stays silent, but so would anything.
     Before the control, this passed as isolated."""
-    from netcheck.capabilities import PortVlans
+    from netcheck.model.capabilities import PortVlans
 
     lab, parts = fake
     parts["bridge"].ports["p1"] = PortVlans("access", (99,))
@@ -117,7 +117,7 @@ def test_a_sender_cut_off_from_its_own_vlan_is_inconclusive(fake) -> None:  # ty
 def test_a_reply_is_a_violation_even_when_the_control_would_fail(fake) -> None:  # type: ignore[no-untyped-def]
     """h3 moved into VLAN 10 answers h1, and h1's control target h2 is broken too: the
     report is the violation, not 'inconclusive'. The control only validates silence."""
-    from netcheck.capabilities import PortVlans
+    from netcheck.model.capabilities import PortVlans
 
     lab, parts = fake
     parts["bridge"].ports["p3"] = PortVlans("access", (10,))  # the wrong-vlan fault
@@ -185,7 +185,7 @@ def test_a_same_switch_control_target_is_a_host_to_force_back(fake) -> None:  # 
 
 def test_the_control_pings_its_target_over_forced_routes_both_ways(fake, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from netcheck.assertions.l2 import check_layer2_control
-    from netcheck.capabilities import PingResult
+    from netcheck.model.capabilities import PingResult
 
     lab, parts = fake
     calls: list[tuple[str, dict[str, float]]] = []
@@ -204,7 +204,7 @@ def test_the_control_pings_its_target_over_forced_routes_both_ways(fake, monkeyp
 
 
 def test_a_failed_control_reports_both_ports_the_link_and_the_neighbors(fake) -> None:  # type: ignore[no-untyped-def]
-    from netcheck.capabilities import PortVlans
+    from netcheck.model.capabilities import PortVlans
 
     lab, parts = fake
     lab.timing.thresholds["reachability"] = Threshold("reachability", timeout=0.01, poll=0.001)
@@ -238,7 +238,7 @@ def test_no_control_target_is_a_warning(fake, tmp_path) -> None:  # type: ignore
 
 def test_describe_and_diff_vlans() -> None:
     from netcheck.assertions.l2 import describe_vlans, vlan_diff
-    from netcheck.capabilities import PortVlans
+    from netcheck.model.capabilities import PortVlans
 
     assert describe_vlans("access", (10,)) == "access VLAN 10"
     assert describe_vlans("trunk", (10, 20)) == "trunk VLAN 10,20"
@@ -256,7 +256,7 @@ def test_describe_and_diff_vlans() -> None:
 
 def test_assert_vlan_membership_reads_the_switch_against_the_intent(fake) -> None:  # type: ignore[no-untyped-def]
     from netcheck.assertions import assert_vlan_membership
-    from netcheck.capabilities import PortVlans
+    from netcheck.model.capabilities import PortVlans
 
     lab, parts = fake
     assert_vlan_membership(lab["sw1"])

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from netcheck.assembly import assemble
 from netcheck.backends.local import LocalFactory, LocalSnapshot
 from netcheck.backends.nvidia_air import NvueFactory
-from netcheck.capabilities import Bridge, Links, Ospf, Shell, Snapshot
-from netcheck.device import CapabilityMissing
-from netcheck.ports import PortMap
+from netcheck.devices.assembly import assemble
+from netcheck.devices.device import CapabilityMissing
+from netcheck.model.capabilities import Bridge, Links, Ospf, Shell, Snapshot
+from netcheck.model.ports import PortMap
 
 from .fakes_local import ScriptedTransport
 from .fakes_nvue import FakeNvueTransport

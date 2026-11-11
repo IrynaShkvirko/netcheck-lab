@@ -235,7 +235,7 @@ Run it with `make fault-missing-ospf && uv run pytest tests/lab -m functional`, 
 ## Fault check
 
 A suite that never fails proves nothing: a test that always passes looks the same as a
-healthy network. Every fault in `netcheck/faults.py` therefore declares the lab tests that
+healthy network. Every fault in `netcheck/faults/catalog.py` therefore declares the lab tests that
 must catch it, and the text each failure report must show (for `wrong-vlan`: the isolation
 test for the pair, naming the drifted port, and the VLAN drift test).
 
@@ -355,25 +355,18 @@ tests/lab/*  ──> assertions (assert_isolated, assert_ospf_neighbor_full, ...
                               └─ nvidia: NVUE REST (JSON); hosts over SSH (planned)
 ```
 
+`netcheck/` is split into layers; each package imports only the ones above it in this
+table (`tests/unit/test_layers.py` holds the code to it):
+
 | Path | What |
 | --- | --- |
-| `netcheck/intent.py` | intent model and validation |
-| `netcheck/expected.py` | expected state derived from the intent, in the capability types; writes `expected_state.json` |
-| `netcheck/render.py` | Containerlab topology, FRR config, switch and host setup |
-| `netcheck/device.py`, `capabilities.py` | composition: devices hold capabilities; normalized state types |
-| `netcheck/assembly.py`, `ports.py` | one table of capabilities per role; logical port to real name mapping |
-| `netcheck/transport/` | `docker exec` and NVUE REST transports, each logging every call (`devicelog.py`) |
-| `netcheck/backends/` | `base.py` (lifecycle, snapshots), `local` (Containerlab), `nvidia_air` (DSX Air) |
-| `netcheck/faults.py` | demo faults, each breaking one intent |
-| `netcheck/steps.py` | named test steps; `continue_on_failure=True` for soft steps that report every failed check in one run |
-| `netcheck/assertions/` | domain assertions that collect evidence before failing: `l2.py` (VLANs, isolation), `reachability.py`, `ospf.py`, `common.py` (guarded evidence, captures) |
-| `netcheck/labstate.py` | baseline, active faults and deployed-intent markers in `.netcheck/` |
-| `netcheck/convergence.py` | traffic-based reconvergence measurement |
-| `netcheck/cleanup.py` | LIFO cleanup registry |
-| `netcheck/timing.py`, `timing.yaml` | thresholds derived from protocol timers |
-| `netcheck/report.py` | eight-part failure report |
-| `netcheck/testrun.py` | one lab test's run: snapshot, steps, cleanup, restore, failure evidence |
-| `netcheck/pytest_plugin.py` | session lab; turns each test run's outcome and report into pytest results |
+| `netcheck/model/` | the network as the intent describes it, no I/O: `intent.py` (model and validation), `expected.py` (expected state in the capability types; writes `expected_state.json`), `capabilities.py` (capability protocols and normalized state types), `ports.py` (logical port to real name), `render.py` (Containerlab topology, FRR config, switch and host setup) |
+| `netcheck/devices/` | talking to one device: `device.py` (a device holds capabilities), `assembly.py` (one table of capabilities per role), `transport/` (`docker exec` and NVUE REST, each logging every call to `devicelog.py`) |
+| `netcheck/backends/` | `base.py` (lifecycle, snapshots), `local` (Containerlab), `nvidia_air` (DSX Air), `labstate.py` (baseline, active faults and deployed-intent markers in `.netcheck/`), `provenance.py` (where fixtures came from) |
+| `netcheck/run/` | one test run: `lab.py` (the lab handle tests use), `testrun.py` (snapshot, steps, cleanup, restore, failure evidence), `steps.py` (named steps; `continue_on_failure=True` reports every failed check in one run), `cleanup.py` (LIFO registry), `timing.py` with `timing.yaml` (thresholds from protocol timers), `measurements.py`, `report.py` (eight-part failure report), `local_samples.py` (`make record-fixtures`) |
+| `netcheck/assertions/` | domain assertions that collect evidence before failing: `l2.py` (VLANs, isolation), `reachability.py`, `ospf.py`, `convergence.py` (traffic-based reconvergence measurement), `common.py` (guarded evidence, captures) |
+| `netcheck/faults/` | `catalog.py` (demo faults, each breaking one intent), `check.py` (`make fault-check`) |
+| `netcheck/pytest_plugin.py`, `netcheck/__main__.py` | session lab, test outcomes and reports for pytest; the `python -m netcheck` commands |
 | `tests/unit/` | unit tests over fake transports and a fake lab (`fakes*.py`, NVUE samples in `fixtures/nvue/`) |
 | `tests/unit/golden/`, `tests/unit/intents/` | reviewed render output per intent, and the test-only second intent (see Golden render) |
 | `mutation/lab/` | opt-in mutation-testing profile over the lab suite |
@@ -409,7 +402,7 @@ recorded: how long a poll takes on a converged lab measures nothing.
 
 ## Golden render
 
-`render.py` writes each router's FRR config from the expected state, and the drift tests
+`model/render.py` writes each router's FRR config from the expected state, and the drift tests
 compare the live lab with that same expected state, so a wrong assumption shared by both
 would pass every drift test. Two unit test files break that loop, for every intent in
 `intent/lab.yaml` and `tests/unit/intents/`:
@@ -449,8 +442,8 @@ make mutation-floor                 # the floor again, on the last results
 make lab-up && make mutate-lab GROUP=FrrOspf   # opt-in, against the running local lab
 ```
 
-**The floor.** The modules the tests' verdicts rest on (the assertions, `convergence`,
-`timing`, `expected`, `intent`, `backends.base`) each keep a minimum share of mutants
+**The floor.** The modules the tests' verdicts rest on (the assertions, `model.expected`,
+`model.intent`, `run.timing`, `backends.base`) each keep a minimum share of mutants
 killed, set in `[tool.mutation-floor]` in `pyproject.toml`. Every survivor in them is either
 killed or listed in `[tool.mutation-accepted]` with the reason it is safe (report wording,
 equivalent code, a path no intent can reach). `scripts/mutation-floor.py check` enforces

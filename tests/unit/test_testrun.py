@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import time
 
-from netcheck.report import FailureReport, IntentViolation
-from netcheck.steps import step
+from netcheck.run.report import FailureReport, IntentViolation
+from netcheck.run.steps import step
 
 
 def test_start_clears_old_artifacts_and_takes_a_snapshot(fake) -> None:  # type: ignore[no-untyped-def]

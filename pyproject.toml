@@ -61,7 +61,7 @@ no_implicit_optional = true
 # Mutation testing (.claude/skills/mutation-testing). Mutates netcheck/ except the two
 # real transports, which no unit test can reach (docker exec, HTTPS to a switch).
 source_paths = ["netcheck/"]
-do_not_mutate = ["netcheck/transport/docker_exec.py", "netcheck/transport/nvue_rest.py"]
+do_not_mutate = ["netcheck/devices/transport/docker_exec.py", "netcheck/devices/transport/nvue_rest.py"]
 pytest_add_cli_args_test_selection = ["tests/unit"]
 # mutmut runs the tests from a copy under mutants/. It copies tests/ and pyproject.toml
 # itself; the tests also read these from the repo root.
@@ -72,14 +72,14 @@ also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py", "README.m
 # it). Raise a floor when the check says so; never lower one to pass.
 [tool.mutation-floor]
 "netcheck.assertions.common" = 98
+"netcheck.assertions.convergence" = 97
 "netcheck.assertions.l2" = 94
 "netcheck.assertions.ospf" = 92
 "netcheck.assertions.reachability" = 96
 "netcheck.backends.base" = 84
-"netcheck.convergence" = 97
-"netcheck.expected" = 96
-"netcheck.intent" = 99
-"netcheck.timing" = 99
+"netcheck.model.expected" = 96
+"netcheck.model.intent" = 99
+"netcheck.run.timing" = 99
 
 # Survivors and no-tests mutants of the guarded modules that are accepted, grouped by the
 # reason: "<reason>" = [mutant names, or fnmatch patterns]. An entry that no longer matches
@@ -135,7 +135,7 @@ also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py", "README.m
 "cleanup label: shown only in the log line when that undo fails" = [
     "netcheck.assertions.common.x_start_capture__mutmut_6",
     "netcheck.assertions.l2.x__force_on_link__mutmut_3",
-    "netcheck.convergence.x_measure_reconvergence__mutmut_22",
+    "netcheck.assertions.convergence.x_measure_reconvergence__mutmut_22",
 ]
 "capture filter and destination: they change only what the pcap evidence holds, which the unit fakes do not model" = [
     "netcheck.assertions.l2.x_assert_isolated__mutmut_14",
@@ -184,17 +184,17 @@ also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py", "README.m
 "warning location: mutmut's trampoline adds a call frame, so no test run under mutmut can tell stacklevel 2 from 3" = [
     "netcheck.assertions.l2.x_check_layer2_control__mutmut_6",
     "netcheck.assertions.l2.x_check_layer2_control__mutmut_9",
-    "netcheck.timing.xǁTimingǁrecord__mutmut_31",
-    "netcheck.timing.xǁTimingǁrecord__mutmut_32",
+    "netcheck.run.timing.xǁTimingǁrecord__mutmut_31",
+    "netcheck.run.timing.xǁTimingǁrecord__mutmut_32",
 ]
 "unreachable fallback: the intent is validated on load, so router ids, link and host addresses and router-to-router costs are always set" = [
     "netcheck.assertions.l2.x_check_not_routed__mutmut_20",
     "netcheck.assertions.ospf.x_assert_ospf_neighbor_full__mutmut_4",
-    "netcheck.expected.xǁExpectedǁ_path_costs__mutmut_14",
-    "netcheck.expected.xǁExpectedǁadjacencies__mutmut_21",
-    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_24",
-    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_29",
-    "netcheck.intent.x_validate__mutmut_25",
+    "netcheck.model.expected.xǁExpectedǁ_path_costs__mutmut_14",
+    "netcheck.model.expected.xǁExpectedǁadjacencies__mutmut_21",
+    "netcheck.model.expected.xǁExpectedǁospf_next_hops__mutmut_24",
+    "netcheck.model.expected.xǁExpectedǁospf_next_hops__mutmut_29",
+    "netcheck.model.intent.x_validate__mutmut_25",
 ]
 "single area: every intent uses area 0, where these spellings of the intended area agree" = [
     "netcheck.assertions.ospf.x_ospf_interface_drift__mutmut_25",
@@ -215,19 +215,19 @@ also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py", "README.m
     "netcheck.assertions.ospf.xǁ_RouterLookǁ__init____mutmut_5",
     "netcheck.assertions.ospf.xǁ_RouterLookǁ__init____mutmut_6",
     "netcheck.backends.base.xǁBackendǁup__mutmut_15",
-    "netcheck.expected.xǁExpectedǁ_path_costs__mutmut_16",
-    "netcheck.expected.xǁExpectedǁoriginator__mutmut_1",
-    "netcheck.expected.xǁExpectedǁospf_interfaces__mutmut_28",
-    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_2",
-    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_3",
-    "netcheck.expected.xǁExpectedǁospf_next_hops__mutmut_5",
-    "netcheck.expected.xǁExpectedǁroutes__mutmut_3",
-    "netcheck.expected.xǁExpectedǁroutes__mutmut_5",
-    "netcheck.expected.xǁExpectedǁvlan_membership__mutmut_6",
+    "netcheck.model.expected.xǁExpectedǁ_path_costs__mutmut_16",
+    "netcheck.model.expected.xǁExpectedǁoriginator__mutmut_1",
+    "netcheck.model.expected.xǁExpectedǁospf_interfaces__mutmut_28",
+    "netcheck.model.expected.xǁExpectedǁospf_next_hops__mutmut_2",
+    "netcheck.model.expected.xǁExpectedǁospf_next_hops__mutmut_3",
+    "netcheck.model.expected.xǁExpectedǁospf_next_hops__mutmut_5",
+    "netcheck.model.expected.xǁExpectedǁroutes__mutmut_3",
+    "netcheck.model.expected.xǁExpectedǁroutes__mutmut_5",
+    "netcheck.model.expected.xǁExpectedǁvlan_membership__mutmut_6",
 ]
 "pacing: how long the stream runs before and after the failure; it moves no verdict, and the lab run measures it" = [
-    "netcheck.convergence.x_measure_reconvergence__mutmut_32",
-    "netcheck.convergence.x_measure_reconvergence__mutmut_78",
+    "netcheck.assertions.convergence.x_measure_reconvergence__mutmut_32",
+    "netcheck.assertions.convergence.x_measure_reconvergence__mutmut_78",
 ]
 "snapshot file format: the id layout and JSON indent of a file netcheck only reads back by its path" = [
     "netcheck.backends.base.xǁBackendǁsnapshot__mutmut_3",

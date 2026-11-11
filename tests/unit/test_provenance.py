@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from netcheck import provenance
-from netcheck.provenance import ProvenanceError
+from netcheck.backends import provenance
+from netcheck.backends.provenance import ProvenanceError
 
 from .intents import ROOT
 

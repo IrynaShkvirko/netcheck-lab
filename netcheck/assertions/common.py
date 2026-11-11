@@ -6,10 +6,10 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import NoReturn, TypeVar
 
-from netcheck.capabilities import CaptureHandle, OspfNeighbor
-from netcheck.device import Device
-from netcheck.lab import Lab
-from netcheck.report import FailureReport, IntentViolation
+from netcheck.devices.device import Device
+from netcheck.model.capabilities import CaptureHandle, OspfNeighbor
+from netcheck.run.lab import Lab
+from netcheck.run.report import FailureReport, IntentViolation
 
 T = TypeVar("T")
 

@@ -30,7 +30,7 @@ the code, `make check` green.
 
 ## Order inside a task
 
-1. Normalized types or interface changes (`capabilities.py`), if any.
+1. Normalized types or interface changes (`model/capabilities.py`), if any.
 2. Pure functions (parsers, renderers, diffs) with their unit tests.
 3. Adapters over the transport protocols, tested with the fakes.
 4. Factory / assembly / backend wiring.
@@ -42,7 +42,7 @@ the code, `make check` green.
 Go through every rule in the netcheck-backend skill against your diff (`git diff`), not
 from memory. Then:
 
-- [ ] no NOS syntax outside `netcheck/backends/` and `netcheck/transport/`
+- [ ] no NOS syntax outside `netcheck/backends/` and `netcheck/devices/transport/`
 - [ ] ports translated only through `PortMap`
 - [ ] every new transport call logged, timed out, raising `TransportError`
 - [ ] parsers strict; restore verified; lifecycle decisions left in `Backend.up`

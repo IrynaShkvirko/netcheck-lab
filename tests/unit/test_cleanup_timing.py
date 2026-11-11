@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from netcheck.cleanup import CleanupRegistry
-from netcheck.timing import SlaWarning, Threshold, Timing, WaitTimeout, evaluate
+from netcheck.run.cleanup import CleanupRegistry
+from netcheck.run.timing import SlaWarning, Threshold, Timing, WaitTimeout, evaluate
 
 ROOT = Path(__file__).resolve().parents[2]
 

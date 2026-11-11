@@ -1,6 +1,6 @@
 ---
 name: netcheck-backend
-description: "netcheck backend rules: capabilities, transports, parsers, lab lifecycle, snapshots, timing. Use when writing, reviewing or refactoring code in netcheck/backends/, netcheck/transport/, netcheck/assembly.py, netcheck/capabilities.py, or adding a NOS or backend (local Containerlab/FRR, NVIDIA DSX Air/NVUE)."
+description: "netcheck backend rules: capabilities, transports, parsers, lab lifecycle, snapshots, timing. Use when writing, reviewing or refactoring code in netcheck/backends/, netcheck/devices/transport/, netcheck/devices/assembly.py, netcheck/model/capabilities.py, or adding a NOS or backend (local Containerlab/FRR, NVIDIA DSX Air/NVUE)."
 ---
 
 # netcheck backend rules
@@ -31,7 +31,7 @@ contract or makes failures undiagnosable; **MEDIUM** hurts maintainability.
 
 ## Transports — HIGH
 
-- Adapters depend on the protocols in `netcheck/transport/base.py`: `CommandTransport`
+- Adapters depend on the protocols in `netcheck/devices/transport/base.py`: `CommandTransport`
   (`run`, `copy_out`) or `ApiTransport` (`request`). Tests pass `ScriptedTransport` or
   `FakeNvueTransport`; a real transport is only built by a backend's `open_*` method.
 - Every real transport records every call in the device log (`DeviceLog.record`, kind
@@ -83,7 +83,7 @@ contract or makes failures undiagnosable; **MEDIUM** hurts maintainability.
 
 ## Faults and failure reports — MEDIUM
 
-- Faults (`netcheck/faults.py`) go through capabilities, break exactly one intent, and are
+- Faults (`netcheck/faults/catalog.py`) go through capabilities, break exactly one intent, and are
   recorded with `Backend.inject_fault` so the run header shows them.
 - Error messages name the device, the logical port and what was expected vs found; they
   end up verbatim in failure reports (ADR-0005).

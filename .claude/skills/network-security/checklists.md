@@ -2,7 +2,7 @@
 
 Run the lists that match the files in the diff.
 
-## New or changed transport (`netcheck/transport/`)
+## New or changed transport (`netcheck/devices/transport/`)
 - [ ] Every call has a timeout; a timeout raises `TransportError`
 - [ ] Every call is logged through `DeviceLog.record` with bodies through `redact()`
 - [ ] No header, credential or full URL with userinfo is logged or put in an exception
@@ -22,7 +22,7 @@ Run the lists that match the files in the diff.
 - [ ] Simulations get an expiry at creation
 - [ ] State files under `.netcheck/` written with mode 0o600 when they hold access data
 
-## Logs, reports, artifacts (`devicelog.py`, `report.py`, `testrun.py`)
+## Logs, reports, artifacts (`devices/devicelog.py`, `run/report.py`, `run/testrun.py`)
 - [ ] After a run: `grep -rn "$NVIDIA_AIR_TOKEN\|$NVUE_PASSWORD" artifacts/ build/ .netcheck/` finds nothing
 - [ ] JUnit `<system-out>` carries the device log only for failed tests (ADR-0005)
 

@@ -7,9 +7,9 @@ from typing import Any
 
 import yaml
 
-from netcheck.expected import Expected
-from netcheck.intent import Intent
-from netcheck.ports import PortMap, port_name
+from netcheck.model.expected import Expected
+from netcheck.model.intent import Intent
+from netcheck.model.ports import PortMap, port_name
 
 # ---- FRR ---------------------------------------------------------------
 

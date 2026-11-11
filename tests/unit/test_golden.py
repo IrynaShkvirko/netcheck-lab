@@ -1,6 +1,6 @@
 """Golden render: what netcheck would deploy, as files a person has read.
 
-render.py writes each router's FRR config from Expected, and the drift tests compare the
+model/render.py writes each router's FRR config from Expected, and the drift tests compare the
 live lab with Expected, so the two agree by construction: a wrong assumption shared by
 both passes every drift test. These files break that loop. They are the rendered lab for
 every intent (topology, FRR configs, expected_state.json), checked in after review. Any
@@ -23,8 +23,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from netcheck.intent import load_intent
-from netcheck.render import render
+from netcheck.model.intent import load_intent
+from netcheck.model.render import render
 
 from .intents import INTENT_FILES, ROOT, intent_id
 

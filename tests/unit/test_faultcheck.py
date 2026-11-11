@@ -7,9 +7,9 @@ from xml.sax.saxutils import escape
 
 import pytest
 
-from netcheck.faultcheck import Outcome, check_fault, check_faults, missed, read_junit
-from netcheck.faults import FAULTS, Detection
-from netcheck.intent import load_intent
+from netcheck.faults.catalog import FAULTS, Detection
+from netcheck.faults.check import Outcome, check_fault, check_faults, missed, read_junit
+from netcheck.model.intent import load_intent
 
 from .intents import INTENT_FILES, ROOT, intent_id
 from .test_review_fixes import _run_lab_suite
@@ -92,7 +92,7 @@ def test_each_fault_is_caught_by_the_tests_it_declares(  # type: ignore[no-untyp
     pytester, fault: str, intent_file: Path
 ) -> None:
     """The real tests/lab files on a healthy fake lab with the fault injected through
-    netcheck.faults: every declared test fails, and its report shows the declared text.
+    netcheck.faults.catalog: every declared test fails, and its report shows the declared text.
     Proves the declarations right without a lab; `make fault-check` proves the lab."""
     junit = pytester.path / "junit.xml"
     _run_lab_suite(

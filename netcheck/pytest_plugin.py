@@ -9,17 +9,17 @@ from typing import Any
 
 import pytest
 
-from netcheck import measurements, provenance
-from netcheck.backends import get_backend
+from netcheck.backends import get_backend, provenance
 from netcheck.backends.base import SnapshotMismatch
-from netcheck.device import CapabilityMissing
-from netcheck.expected import Expected
-from netcheck.intent import load_intent
-from netcheck.lab import Lab, set_current
-from netcheck.labstate import LabState
-from netcheck.report import IntentViolation
-from netcheck.testrun import TestRun
-from netcheck.timing import Measurement, Timing
+from netcheck.backends.labstate import LabState
+from netcheck.devices.device import CapabilityMissing
+from netcheck.model.expected import Expected
+from netcheck.model.intent import load_intent
+from netcheck.run import measurements
+from netcheck.run.lab import Lab, set_current
+from netcheck.run.report import IntentViolation
+from netcheck.run.testrun import TestRun
+from netcheck.run.timing import Measurement, Timing
 
 ROOT = Path(__file__).resolve().parent.parent
 

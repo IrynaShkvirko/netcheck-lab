@@ -33,11 +33,11 @@ from netcheck.assertions.common import (
     finish_capture,
     start_capture,
 )
-from netcheck.capabilities import CaptureHandle, PingResult, PortVlans
-from netcheck.device import Device
-from netcheck.lab import Lab, current
-from netcheck.report import DiffLine, FailureReport
-from netcheck.timing import WaitTimeout
+from netcheck.devices.device import Device
+from netcheck.model.capabilities import CaptureHandle, PingResult, PortVlans
+from netcheck.run.lab import Lab, current
+from netcheck.run.report import DiffLine, FailureReport
+from netcheck.run.timing import WaitTimeout
 
 PROBE_INTERVAL = 0.2  # seconds between isolation probes
 

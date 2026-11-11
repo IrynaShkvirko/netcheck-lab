@@ -31,7 +31,7 @@ own commit:
 | --- | --- |
 | Extract a pure function | `frr_config_diff` out of `LocalSnapshot._restore_frr` |
 | Introduce a seam | adapters take `CommandTransport` instead of building `DockerExecTransport` |
-| Move a module and re-export | `redact` moves to `transport/rest.py`, re-exported from `nvue_rest` |
+| Move a module and re-export | `redact` moves to `devices/transport/rest.py`, re-exported from `nvue_rest` |
 | Rename with every caller | `NvueFactory` -> `NvidiaFactory`, alias kept until callers move |
 | Replace a duplicate with the shared one | four port-map copies -> `PortMap.for_node` |
 
