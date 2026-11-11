@@ -65,4 +65,4 @@ do_not_mutate = ["netcheck/transport/docker_exec.py", "netcheck/transport/nvue_r
 pytest_add_cli_args_test_selection = ["tests/unit"]
 # mutmut runs the tests from a copy under mutants/. It copies tests/ and pyproject.toml
 # itself; the tests also read these from the repo root.
-also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py"]
+also_copy = ["intent/", "timing.yaml", "backends.yaml", "conftest.py", "README.md", "scripts/", ".github/"]

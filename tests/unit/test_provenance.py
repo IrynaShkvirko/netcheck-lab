@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -91,9 +92,14 @@ def test_readme_states_the_nvue_sample_count_and_calls_it_unverified() -> None:
             assert "unverified" in readme[i : i + 80], readme[i : i + 80]
 
 
-def test_unit_run_header_and_summary_count_documentation_samples(pytester) -> None:  # type: ignore[no-untyped-def]
+def test_unit_run_header_and_summary_count_documentation_samples(pytester, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """The unit suite says how many NVUE samples are real, in its header, and how many
     tests ran on documentation samples only, in its summary."""
+    # Under mutmut's first pass (which maps tests to functions) the child pytest would try
+    # to record hits from pytester's temp folder, where mutmut finds no config, and crash.
+    # Run the child on the original code then; a mutant run still passes its mutant down.
+    if os.environ.get("MUTANT_UNDER_TEST") == "stats":
+        monkeypatch.setenv("MUTANT_UNDER_TEST", "")
     result = pytester.runpytest_subprocess(
         str(ROOT / "tests" / "unit" / "test_nvue.py"),
         "-p",
