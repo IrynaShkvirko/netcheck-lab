@@ -101,3 +101,98 @@ def test_pairs_and_failover_plan(expected: Expected) -> None:
         "10.0.12.3",
     )
     assert (plan.prefix, plan.dst) == ("10.0.30.0/24", "h4")
+
+
+# --- edges no shipped intent has (mutation floor, improvement 6) ---
+
+
+def _edited(tmp_path, edit):  # type: ignore[no-untyped-def]
+    from .test_intent_validation import load
+
+    return Expected(load(tmp_path, edit))
+
+
+def test_a_broadcast_domain_follows_trunks_across_several_switches(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """sw1 - sw2 - sw3 by VLAN 10 trunks: h5 on sw3 shares h1's domain two switches away."""
+
+    def chain(raw):  # type: ignore[no-untyped-def]
+        raw["nodes"].update(
+            sw2={"role": "switch"},
+            sw3={"role": "switch"},
+            h5={"role": "host", "ip": "10.0.10.15/24"},
+        )
+        raw["links"] += [
+            {
+                "a": {"node": "sw1", "port": "p5"},
+                "b": {"node": "sw2", "port": "p1"},
+                "mode": "trunk",
+                "vlans": [10],
+            },
+            {
+                "a": {"node": "sw2", "port": "p2"},
+                "b": {"node": "sw3", "port": "p1"},
+                "mode": "trunk",
+                "vlans": [10],
+            },
+            {
+                "a": {"node": "h5", "port": "p1"},
+                "b": {"node": "sw3", "port": "p2"},
+                "mode": "access",
+                "vlan": 10,
+            },
+        ]
+
+    assert _edited(tmp_path, chain).broadcast_domain("h1") == ["h2", "h5"]
+
+
+def test_vlan_gateway_for_hosts_without_one(tmp_path, expected: Expected) -> None:  # type: ignore[no-untyped-def]
+    assert expected.vlan_gateway("h1") == ("r1", "10.0.10.1")
+    assert expected.vlan_gateway("h3") is None  # VLAN 20 has no gateway
+    assert expected.vlan_gateway("h4") is None  # on a router port, in no VLAN
+    named_only = _edited(tmp_path, lambda r: r["vlans"][20].update(gateway={"node": "r1"}))
+    assert named_only.vlan_gateway("h3") is None  # a router but no address
+
+
+def test_failover_plan_from_the_first_reachable_pair_and_the_lan_side_with_an_address(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    def flipped(raw):  # type: ignore[no-untyped-def]
+        lan = next(lk for lk in raw["links"] if lk.get("ospf_passive"))
+        lan["a"], lan["b"] = lan["b"], lan["a"]  # h4 first, r2 (with the address) second
+        raw["expect"]["reachable"] = [["h2", "h4"], ["h1", "h4"]]
+
+    plan = _edited(tmp_path, flipped).failover()
+    assert (plan.prefix, plan.src, plan.dst) == ("10.0.30.0/24", "h2", "h4")
+
+
+def _no_labels(raw):  # type: ignore[no-untyped-def]
+    for lk in raw["links"]:
+        lk.pop("label", None)
+
+
+def _no_passive_lan(raw):  # type: ignore[no-untyped-def]
+    for lk in raw["links"]:
+        lk.pop("ospf_passive", None)
+
+
+def _no_backup_address(raw):  # type: ignore[no-untyped-def]
+    next(lk for lk in raw["links"] if lk.get("label") == "backup")["b"].pop("ip")
+    next(lk for lk in raw["links"] if lk.get("label") == "backup")["a"].pop("ip")
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (_no_labels, "intent has no links labelled 'primary' and 'backup'"),
+        (_no_passive_lan, "intent has no passive LAN or no reachable pair to send traffic"),
+        (
+            lambda r: r["expect"].update(reachable=[]),
+            "intent has no passive LAN or no reachable pair to send traffic",
+        ),
+        (_no_backup_address, "primary/backup links or the far LAN have no addresses"),
+    ],
+)
+def test_failover_needs_labels_a_lan_traffic_and_addresses(tmp_path, edit, message: str) -> None:  # type: ignore[no-untyped-def]
+    with pytest.raises(LookupError) as exc:
+        _edited(tmp_path, edit).failover()
+    assert str(exc.value) == message
