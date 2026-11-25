@@ -5,7 +5,7 @@ description = "Intent-driven network test framework: Containerlab/FRR and NVIDIA
 requires-python = ">=3.11"
 dependencies = [
     "pytest>=8.2",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.4",
     "requests>=2.31",
 ]
 
@@ -13,7 +13,7 @@ dependencies = [
 dev = [
     "mutmut>=3.8.1",
     "mypy>=1.10",
-    "ruff>=0.5",
+    "ruff>=0.17.6",
     "types-PyYAML",
     "types-requests",
 ]
